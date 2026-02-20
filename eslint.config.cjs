@@ -9,6 +9,8 @@ module.exports = tseslint.config(
     ignores: [
       'dist/**',
       'node_modules/**',
+      '**/node_modules/**',
+      '**/dist/**',
       'coverage/**',
       'playwright-report/**',
       'src-tauri/target/**',

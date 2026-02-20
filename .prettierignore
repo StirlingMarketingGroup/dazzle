@@ -5,4 +5,5 @@ coverage
 playwright-report
 src-tauri/target
 src-tauri/gen
+packages/client/dist
 .claude

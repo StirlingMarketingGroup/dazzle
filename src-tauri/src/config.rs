@@ -11,7 +11,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            port: 9100,
+            port: 29100,
             selected_printer: None,
             auto_start: false,
         }

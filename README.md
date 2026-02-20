@@ -12,7 +12,7 @@ A lightweight, open-source Tauri desktop app for printing ZPL directly to therma
 - System tray with status indicator
 - Auto-start on login (optional)
 - Print queue/history view
-- Configurable port
+- Configurable port (default: 29100)
 
 ## Supported Printers
 
@@ -20,16 +20,49 @@ A lightweight, open-source Tauri desktop app for printing ZPL directly to therma
 - Bixolon SRP-770III (ZPL emulation)
 - Any thermal printer with ZPL support
 
-## API
+## Client Library
+
+Install the TypeScript client for easy integration:
+
+```bash
+npm install dazzle-zpl
+```
 
 ```typescript
-// From any web app / browser
-await fetch('http://localhost:9100/print', {
+import { Dazzle } from 'dazzle-zpl';
+
+const dazzle = new Dazzle();
+
+// Check if Dazzle is running
+if (await dazzle.isRunning()) {
+  // Print a label
+  await dazzle.print('^XA^FO50,50^A0N,50,50^FDHello World^FS^XZ');
+
+  // List available printers
+  const printers = await dazzle.printers();
+
+  // Print to a specific printer
+  await dazzle.print(zpl, { printer: 'Zebra_ZD420' });
+}
+```
+
+Or use the HTTP API directly:
+
+```typescript
+await fetch('http://localhost:29100/print', {
   method: 'POST',
-  headers: { 'Content-Type': 'text/plain' },
   body: zplContent,
 });
 ```
+
+### HTTP Endpoints
+
+| Method | Path                  | Description                |
+| ------ | --------------------- | -------------------------- |
+| POST   | `/print`              | Send ZPL (body = raw text) |
+| POST   | `/print?printer=NAME` | Send to a specific printer |
+| GET    | `/printers`           | List available printers    |
+| GET    | `/status`             | Health check / version     |
 
 ## Tech Stack
 

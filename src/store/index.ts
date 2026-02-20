@@ -17,7 +17,7 @@ interface AppStore {
 
 export const useAppStore = create<AppStore>((set) => ({
   printers: [],
-  config: { port: 9100, selected_printer: null, auto_start: false },
+  config: { port: 29100, selected_printer: null, auto_start: false },
   printJobs: [],
   serverRunning: false,
   loading: true,

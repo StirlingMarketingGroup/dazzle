@@ -99,11 +99,16 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const version = process.env.RELEASE_VERSION;
-          const file = 'src-tauri/tauri.conf.json';
-          const content = fs.readFileSync(file, 'utf8');
-          const json = JSON.parse(content);
-          json.version = version;
-          fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n');
+
+          const tauri = 'src-tauri/tauri.conf.json';
+          const tauriJson = JSON.parse(fs.readFileSync(tauri, 'utf8'));
+          tauriJson.version = version;
+          fs.writeFileSync(tauri, JSON.stringify(tauriJson, null, 2) + '\n');
+
+          const client = 'packages/client/package.json';
+          const clientJson = JSON.parse(fs.readFileSync(client, 'utf8'));
+          clientJson.version = version;
+          fs.writeFileSync(client, JSON.stringify(clientJson, null, 2) + '\n');
           NODE
 
       - name: Detect changes
@@ -159,6 +164,16 @@ jobs:
             target: aarch64-unknown-linux-gnu
             arch: arm64
             rust-targets: aarch64-unknown-linux-gnu
+            self_hosted: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x86_64
+            rust-targets: x86_64-pc-windows-msvc
+            self_hosted: false
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: arm64
+            rust-targets: aarch64-pc-windows-msvc
             self_hosted: false
     permissions:
       contents: write
@@ -290,6 +305,7 @@ jobs:
             --target ${{ matrix.target }}
             --verbose
             ${{ runner.os == 'macOS' && '--bundles app updater' || '' }}
+            ${{ runner.os == 'Windows' && '--bundles msi nsis' || '' }}
             ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '--bundles deb' || '' }}
 
       - name: Create and notarize DMG (macOS)
@@ -372,6 +388,16 @@ jobs:
             arch: arm64
             rust-targets: aarch64-unknown-linux-gnu
             self_hosted: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x86_64
+            rust-targets: x86_64-pc-windows-msvc
+            self_hosted: false
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: arm64
+            rust-targets: aarch64-pc-windows-msvc
+            self_hosted: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -453,8 +479,35 @@ jobs:
           rm -rf "$TARGET_DIR/${{ matrix.target }}/release/bundle/appimage" || true
 
       - name: Build Tauri bundle
-        run: |
-          set -euxo pipefail
-          npm run tauri build -- --ci --target ${{ matrix.target }} --verbose ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '--bundles deb' || '' }}
+        run: npm run tauri build -- --ci --target ${{ matrix.target }} --verbose ${{ runner.os == 'Windows' && '--bundles msi nsis' || '' }} ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '--bundles deb' || '' }}
+        shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: ${{ runner.os == 'Linux' && '1' || '0' }}
+
+  publish-npm:
+    name: Publish Client to npm
+    needs: [sync-version, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync-version.outputs.release_ref }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install and build client
+        working-directory: packages/client
+        run: |
+          npm install
+          npm run build
+
+      - name: Publish to npm
+        working-directory: packages/client
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
