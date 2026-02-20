@@ -1,6 +1,6 @@
 # Dazzle
 
-> *A group of zebras is called a "dazzle"*
+> _A group of zebras is called a "dazzle"_
 
 A lightweight, open-source Tauri desktop app for printing ZPL directly to thermal label printers. Cross-platform (Mac, Windows, Linux) and free alternative to QZ Tray.
 
