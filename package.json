@@ -1,6 +1,6 @@
 {
   "name": "dazzle",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "A lightweight, cross-platform ZPL print server for thermal label printers",
