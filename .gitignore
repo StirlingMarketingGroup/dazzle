@@ -59,6 +59,7 @@ tauri-private-key*
 
 # Tauri specific
 src-tauri/target/
+src-tauri/gen/
 
 # Rust specific
 **/*.rs.bk
