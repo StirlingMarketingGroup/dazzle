@@ -651,8 +651,11 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for Trusted Publishing (OIDC)
+        run: npm install -g npm@latest
 
       - name: Install and build client
         working-directory: packages/client
@@ -663,5 +666,3 @@ jobs:
       - name: Publish to npm
         working-directory: packages/client
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
