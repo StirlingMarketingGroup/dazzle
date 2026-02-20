@@ -94,7 +94,7 @@ jobs:
             npm version "$RELEASE_VERSION" --no-git-tag-version
           fi
 
-      - name: Update Tauri config
+      - name: Update Tauri config and client package
         run: |
           node <<'NODE'
           const fs = require('fs');
@@ -145,31 +145,37 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS Apple Silicon — self-hosted
           - os: [self-hosted, macOS, ARM64, medium]
             target: aarch64-apple-darwin
             arch: arm64
             rust-targets: aarch64-apple-darwin
             self_hosted: true
+          # macOS Intel (cross-compile from arm64 runner)
           - os: [self-hosted, macOS, ARM64, medium]
             target: x86_64-apple-darwin
             arch: x86_64
             rust-targets: x86_64-apple-darwin
             self_hosted: true
+          # Linux x86_64 — self-hosted
           - os: [self-hosted, Linux, X64, medium]
             target: x86_64-unknown-linux-gnu
             arch: x86_64
             rust-targets: x86_64-unknown-linux-gnu
             self_hosted: true
+          # Linux arm64 — GitHub-hosted (no self-hosted arm64 runner)
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: arm64
             rust-targets: aarch64-unknown-linux-gnu
             self_hosted: false
+          # Windows x86_64 — GitHub-hosted
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x86_64
             rust-targets: x86_64-pc-windows-msvc
             self_hosted: false
+          # Windows arm64 — GitHub-hosted
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             arch: arm64
@@ -186,6 +192,14 @@ jobs:
         run: |
           echo "CARGO_TARGET_DIR=$HOME/.cache/cargo-target/dazzle-${{ matrix.target }}" >> $GITHUB_ENV
           mkdir -p "$HOME/.cache/cargo-target/dazzle-${{ matrix.target }}"
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "RELEASE_TAG is not available." >&2
+            exit 1
+          fi
 
       - name: Checkout code
         uses: actions/checkout@v6
@@ -222,11 +236,34 @@ jobs:
           echo "/opt/homebrew/bin" >> $GITHUB_PATH
           echo "/opt/homebrew/sbin" >> $GITHUB_PATH
 
+      # Normalize lockfile for caching on GitHub-hosted runners
+      - name: Normalize npm lockfile for caching
+        if: ${{ !matrix.self_hosted }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          src = Path('package-lock.json')
+          data = json.loads(src.read_text())
+
+          data['version'] = ''
+          root_pkg = data.get('packages', {}).get('')
+          if isinstance(root_pkg, dict):
+            root_pkg['version'] = ''
+
+          Path('package-lock.ci.json').write_text(
+            json.dumps(data, sort_keys=True, separators=(',', ':'))
+          )
+          PY
+
       - uses: actions/setup-node@v6
         if: ${{ !matrix.self_hosted }}
         with:
           node-version: 20
           cache: 'npm'
+          cache-dependency-path: ${{ !matrix.self_hosted && 'package-lock.ci.json' || '' }}
 
       - name: Install Rust toolchain
         if: ${{ !matrix.self_hosted }}
@@ -244,6 +281,35 @@ jobs:
           shared-key: release-${{ matrix.target }}
           cache-all-crates: true
           cache-on-failure: true
+
+      # Tauri download caching for GitHub-hosted runners
+      - name: Prepare Tauri cache directory (Linux)
+        if: runner.os == 'Linux' && !matrix.self_hosted
+        run: mkdir -p ~/.cache/tauri
+
+      - name: Cache Tauri downloads (Linux)
+        if: runner.os == 'Linux' && !matrix.self_hosted
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/tauri
+          key: tauri-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('src-tauri/tauri.conf.json') }}
+          restore-keys: |
+            tauri-${{ runner.os }}-${{ matrix.target }}-
+            tauri-${{ runner.os }}-
+
+      - name: Prepare Tauri cache directory (macOS)
+        if: runner.os == 'macOS' && !matrix.self_hosted
+        run: mkdir -p ~/Library/Caches/tauri
+
+      - name: Cache Tauri downloads (macOS)
+        if: runner.os == 'macOS' && !matrix.self_hosted
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/tauri
+          key: tauri-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('src-tauri/tauri.conf.json') }}
+          restore-keys: |
+            tauri-${{ runner.os }}-${{ matrix.target }}-
+            tauri-${{ runner.os }}-
 
       - name: Install frontend dependencies
         run: npm ci
@@ -291,6 +357,10 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           APPIMAGE_EXTRACT_AND_RUN: ${{ runner.os == 'Linux' && '1' || '' }}
+          TAURI_BUNDLE_DEBUG: '1'
+          TAURI_LOG: trace
+          RUST_LOG: tauri_bundler=debug
+          TAURI_BUNDLE_LINUX_APPIMAGE_ARGS: ${{ runner.os == 'Linux' && '--verbosity=2' || '' }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
         with:
           tagName: ${{ env.RELEASE_TAG }}
@@ -299,6 +369,7 @@ jobs:
             Automated binaries for Dazzle. Download the installer matching your platform.
 
             **macOS users**: Choose `arm64` for Apple Silicon (M1/M2/M3) or `x86_64` for Intel Macs.
+            **Windows users**: The `.msi` installer supports GPO deployment.
           releaseDraft: false
           prerelease: ${{ startsWith(env.RELEASE_TAG, 'v0.') }}
           args: >-
@@ -360,6 +431,15 @@ jobs:
           DMG_PATH="$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg/$DMG_NAME"
           gh release upload "${{ env.RELEASE_TAG }}" "$DMG_PATH" --clobber
 
+      - name: Dump linuxdeploy diagnostics
+        if: failure() && runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          echo "Listing tauri cache directory" >&2
+          ls -R ~/.cache/tauri | head -n 200 || true
+          echo "Searching for linuxdeploy logs" >&2
+          find ~/.cache/tauri -type f -name '*.log' -print -exec tail -n +1 {} + || true
+
   release-dry-run:
     name: Dry Run (${{ matrix.arch }}-${{ matrix.target }})
     if: ${{ github.event_name == 'pull_request' }}
@@ -368,31 +448,37 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS Apple Silicon — self-hosted
           - os: [self-hosted, macOS, ARM64, medium]
             target: aarch64-apple-darwin
             arch: arm64
             rust-targets: aarch64-apple-darwin
             self_hosted: true
+          # macOS Intel (cross-compile from arm64 runner)
           - os: [self-hosted, macOS, ARM64, medium]
             target: x86_64-apple-darwin
             arch: x86_64
             rust-targets: x86_64-apple-darwin
             self_hosted: true
+          # Linux x86_64 — self-hosted
           - os: [self-hosted, Linux, X64, medium]
             target: x86_64-unknown-linux-gnu
             arch: x86_64
             rust-targets: x86_64-unknown-linux-gnu
             self_hosted: true
+          # Linux arm64 — GitHub-hosted
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: arm64
             rust-targets: aarch64-unknown-linux-gnu
             self_hosted: false
+          # Windows x86_64 — GitHub-hosted
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x86_64
             rust-targets: x86_64-pc-windows-msvc
             self_hosted: false
+          # Windows arm64 — GitHub-hosted
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             arch: arm64
@@ -439,11 +525,33 @@ jobs:
           echo "/opt/homebrew/bin" >> $GITHUB_PATH
           echo "/opt/homebrew/sbin" >> $GITHUB_PATH
 
+      - name: Normalize npm lockfile for caching
+        if: ${{ !matrix.self_hosted }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          src = Path('package-lock.json')
+          data = json.loads(src.read_text())
+
+          data['version'] = ''
+          root_pkg = data.get('packages', {}).get('')
+          if isinstance(root_pkg, dict):
+            root_pkg['version'] = ''
+
+          Path('package-lock.ci.json').write_text(
+            json.dumps(data, sort_keys=True, separators=(',', ':'))
+          )
+          PY
+
       - uses: actions/setup-node@v6
         if: ${{ !matrix.self_hosted }}
         with:
           node-version: 20
           cache: 'npm'
+          cache-dependency-path: ${{ !matrix.self_hosted && 'package-lock.ci.json' || '' }}
 
       - name: Install Rust toolchain
         if: ${{ !matrix.self_hosted }}
@@ -461,6 +569,34 @@ jobs:
           shared-key: release-${{ matrix.target }}
           cache-all-crates: true
           cache-on-failure: true
+
+      - name: Prepare Tauri cache directory (Linux)
+        if: runner.os == 'Linux' && !matrix.self_hosted
+        run: mkdir -p ~/.cache/tauri
+
+      - name: Cache Tauri downloads (Linux)
+        if: runner.os == 'Linux' && !matrix.self_hosted
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/tauri
+          key: tauri-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('src-tauri/tauri.conf.json') }}
+          restore-keys: |
+            tauri-${{ runner.os }}-${{ matrix.target }}-
+            tauri-${{ runner.os }}-
+
+      - name: Prepare Tauri cache directory (macOS)
+        if: runner.os == 'macOS' && !matrix.self_hosted
+        run: mkdir -p ~/Library/Caches/tauri
+
+      - name: Cache Tauri downloads (macOS)
+        if: runner.os == 'macOS' && !matrix.self_hosted
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/tauri
+          key: tauri-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('src-tauri/tauri.conf.json') }}
+          restore-keys: |
+            tauri-${{ runner.os }}-${{ matrix.target }}-
+            tauri-${{ runner.os }}-
 
       - name: Install frontend dependencies
         run: npm ci
@@ -483,6 +619,19 @@ jobs:
         shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: ${{ runner.os == 'Linux' && '1' || '0' }}
+          TAURI_BUNDLE_DEBUG: '1'
+          TAURI_LOG: trace
+          RUST_LOG: tauri_bundler=debug
+          TAURI_BUNDLE_LINUX_APPIMAGE_ARGS: ${{ runner.os == 'Linux' && '--verbosity=2' || '' }}
+
+      - name: Dump linuxdeploy diagnostics
+        if: failure() && runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          echo "Listing tauri cache directory" >&2
+          ls -R ~/.cache/tauri | head -n 200 || true
+          echo "Searching for linuxdeploy logs" >&2
+          find ~/.cache/tauri -type f -name '*.log' -print -exec tail -n +1 {} + || true
 
   publish-npm:
     name: Publish Client to npm

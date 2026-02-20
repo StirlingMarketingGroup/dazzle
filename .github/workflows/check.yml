@@ -36,6 +36,7 @@ jobs:
               - 'vite.config.ts'
               - 'src/**'
               - 'src-tauri/**'
+              - 'packages/**'
               - '.github/workflows/check.yml'
 
       - name: Skip checks
