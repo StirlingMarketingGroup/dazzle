@@ -639,6 +639,7 @@ jobs:
   publish-npm:
     name: Publish Client to npm
     needs: [sync-version, release]
+    if: ${{ !cancelled() && needs.sync-version.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
