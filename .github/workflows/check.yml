@@ -1,0 +1,51 @@
+name: Check
+
+on:
+  push:
+    branches: ['main', 'master']
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-typecheck-rust:
+    runs-on: [self-hosted, medium]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup persistent cargo target dir
+        run: |
+          echo "CARGO_TARGET_DIR=$HOME/.cache/cargo-target/dazzle-check" >> $GITHUB_ENV
+          mkdir -p "$HOME/.cache/cargo-target/dazzle-check"
+
+      - name: Detect files requiring checks
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            check:
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - 'tsconfig.node.json'
+              - 'eslint.config.cjs'
+              - 'vite.config.ts'
+              - 'src/**'
+              - 'src-tauri/**'
+              - '.github/workflows/check.yml'
+
+      - name: Skip checks
+        if: steps.changes.outputs.check != 'true'
+        run: echo "No relevant changes detected. Skipping lint/typecheck/rust checks."
+
+      - name: Install dependencies
+        if: steps.changes.outputs.check == 'true'
+        run: npm ci
+
+      - name: Run checks
+        if: steps.changes.outputs.check == 'true'
+        run: npm run check

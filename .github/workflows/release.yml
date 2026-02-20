@@ -1,0 +1,460 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (for example v1.2.3)'
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-version:
+    name: Sync Version Metadata
+    if: ${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || (github.event.inputs.tag && startsWith(github.event.inputs.tag, 'v')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.context.outputs.release_tag }}
+      release_ref: ${{ steps.context.outputs.release_ref }}
+      release_version: ${{ steps.context.outputs.release_version }}
+      default_branch: ${{ steps.context.outputs.default_branch }}
+      changes_detected: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: Generate GitHub App token
+        id: smg-actions
+        uses: getsentry/action-github-app-token@v3
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Resolve release context
+        id: context
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag || '' }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'master' }}
+        run: |
+          tag=""
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+          elif [[ "$REF_TYPE" == "tag" ]]; then
+            tag="$REF_NAME"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            echo "Release tag is required (tag push or workflow input)." >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          if [[ "$version" == "$tag" ]]; then
+            version="$tag"
+          fi
+
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_ref=refs/tags/$tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=$version" >> "$GITHUB_OUTPUT"
+          echo "default_branch=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "RELEASE_REF=refs/tags/$tag" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "TARGET_BRANCH=$DEFAULT_BRANCH" >> "$GITHUB_ENV"
+
+      - name: Checkout target branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.context.outputs.default_branch }}
+          token: ${{ steps.smg-actions.outputs.token }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Update npm metadata
+        shell: bash
+        run: |
+          current=$(node -p "require('./package.json').version")
+          if [[ "$current" == "$RELEASE_VERSION" ]]; then
+            echo "package.json already version $current; skipping."
+          else
+            npm version "$RELEASE_VERSION" --no-git-tag-version
+          fi
+
+      - name: Update Tauri config
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const version = process.env.RELEASE_VERSION;
+          const file = 'src-tauri/tauri.conf.json';
+          const content = fs.readFileSync(file, 'utf8');
+          const json = JSON.parse(content);
+          json.version = version;
+          fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n');
+          NODE
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit version bump
+        if: steps.diff.outputs.changed == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: 'chore: sync version to ${{ env.RELEASE_TAG }}'
+          branch: ${{ env.TARGET_BRANCH }}
+          commit_user_name: dazzle-release-bot
+          commit_user_email: releases@dazzle.app
+
+      - name: Ensure release tag exists
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git fetch --tags --force
+          git tag -f "$RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG" --force
+
+  release:
+    name: Release (${{ matrix.arch }}-${{ matrix.target }})
+    needs: sync-version
+    if: ${{ github.event_name != 'pull_request' && needs.sync-version.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: [self-hosted, macOS, ARM64, medium]
+            target: aarch64-apple-darwin
+            arch: arm64
+            rust-targets: aarch64-apple-darwin
+            self_hosted: true
+          - os: [self-hosted, macOS, ARM64, medium]
+            target: x86_64-apple-darwin
+            arch: x86_64
+            rust-targets: x86_64-apple-darwin
+            self_hosted: true
+          - os: [self-hosted, Linux, X64, medium]
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            rust-targets: x86_64-unknown-linux-gnu
+            self_hosted: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            rust-targets: aarch64-unknown-linux-gnu
+            self_hosted: false
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.sync-version.outputs.release_tag || github.ref_name }}
+      RELEASE_REF: ${{ needs.sync-version.outputs.release_ref || github.ref }}
+    steps:
+      - name: Setup persistent cargo target dir (self-hosted)
+        if: matrix.self_hosted
+        run: |
+          echo "CARGO_TARGET_DIR=$HOME/.cache/cargo-target/dazzle-${{ matrix.target }}" >> $GITHUB_ENV
+          mkdir -p "$HOME/.cache/cargo-target/dazzle-${{ matrix.target }}"
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux' && !matrix.self_hosted
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            wget \
+            file \
+            xdg-utils \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config \
+            patchelf \
+            libglib2.0-bin \
+            libgdk-pixbuf2.0-bin \
+            desktop-file-utils \
+            shared-mime-info
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
+
+      - name: Setup Homebrew PATH (macOS self-hosted)
+        if: runner.os == 'macOS' && matrix.self_hosted
+        run: |
+          echo "/opt/homebrew/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/sbin" >> $GITHUB_PATH
+
+      - uses: actions/setup-node@v6
+        if: ${{ !matrix.self_hosted }}
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust toolchain
+        if: ${{ !matrix.self_hosted }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust build artifacts
+        if: ${{ !matrix.self_hosted }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+          shared-key: release-${{ matrix.target }}
+          cache-all-crates: true
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Import Apple Certificate
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          curl -sL "https://www.apple.com/certificateauthority/DeveloperIDCA.cer" -o $RUNNER_TEMP/DeveloperIDCA.cer
+          curl -sL "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer" -o $RUNNER_TEMP/DeveloperIDG2CA.cer
+          security import $RUNNER_TEMP/DeveloperIDCA.cer -k "$KEYCHAIN_PATH" -T /usr/bin/codesign || true
+          security import $RUNNER_TEMP/DeveloperIDG2CA.cer -k "$KEYCHAIN_PATH" -T /usr/bin/codesign || true
+          rm -f $RUNNER_TEMP/DeveloperIDCA.cer $RUNNER_TEMP/DeveloperIDG2CA.cer
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')
+          security list-keychain -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f $RUNNER_TEMP/certificate.p12
+
+      - name: Clean up stale build artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
+          rm -rf "$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg" || true
+          rm -rf "$TARGET_DIR/${{ matrix.target }}/release/bundle/macos" || true
+
+      - name: Clean up stale build artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
+          rm -rf "$TARGET_DIR/${{ matrix.target }}/release/bundle/appimage" || true
+
+      - name: Build and publish installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          APPIMAGE_EXTRACT_AND_RUN: ${{ runner.os == 'Linux' && '1' || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: Dazzle ${{ env.RELEASE_TAG }}
+          releaseBody: |
+            Automated binaries for Dazzle. Download the installer matching your platform.
+
+            **macOS users**: Choose `arm64` for Apple Silicon (M1/M2/M3) or `x86_64` for Intel Macs.
+          releaseDraft: false
+          prerelease: ${{ startsWith(env.RELEASE_TAG, 'v0.') }}
+          args: >-
+            --target ${{ matrix.target }}
+            --verbose
+            ${{ runner.os == 'macOS' && '--bundles app updater' || '' }}
+            ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '--bundles deb' || '' }}
+
+      - name: Create and notarize DMG (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
+          APP_PATH="$TARGET_DIR/${{ matrix.target }}/release/bundle/macos/Dazzle.app"
+          ARCH="${{ matrix.arch }}"
+          VERSION="${RELEASE_TAG#v}"
+          DMG_NAME="Dazzle_${VERSION}_${ARCH}.dmg"
+          DMG_DIR="$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg"
+          DMG_PATH="$DMG_DIR/$DMG_NAME"
+
+          mkdir -p "$DMG_DIR"
+
+          STAGING=$(mktemp -d)
+          cp -R "$APP_PATH" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+
+          for attempt in 1 2 3; do
+            hdiutil create -volname "Dazzle-${ARCH}" -srcfolder "$STAGING" -ov -format UDZO "$DMG_PATH" && break
+            echo "hdiutil attempt $attempt failed, retrying in 10s..."
+            sleep 10
+          done
+          rm -rf "$STAGING"
+
+          echo "Notarizing $DMG_NAME..."
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          xcrun stapler staple "$DMG_PATH"
+          echo "DMG notarized and stapled: $DMG_PATH"
+
+      - name: Upload DMG to release (macOS)
+        if: runner.os == 'macOS'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
+          ARCH="${{ matrix.arch }}"
+          VERSION="${RELEASE_TAG#v}"
+          DMG_NAME="Dazzle_${VERSION}_${ARCH}.dmg"
+          DMG_PATH="$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg/$DMG_NAME"
+          gh release upload "${{ env.RELEASE_TAG }}" "$DMG_PATH" --clobber
+
+  release-dry-run:
+    name: Dry Run (${{ matrix.arch }}-${{ matrix.target }})
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: [self-hosted, macOS, ARM64, medium]
+            target: aarch64-apple-darwin
+            arch: arm64
+            rust-targets: aarch64-apple-darwin
+            self_hosted: true
+          - os: [self-hosted, macOS, ARM64, medium]
+            target: x86_64-apple-darwin
+            arch: x86_64
+            rust-targets: x86_64-apple-darwin
+            self_hosted: true
+          - os: [self-hosted, Linux, X64, medium]
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            rust-targets: x86_64-unknown-linux-gnu
+            self_hosted: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            rust-targets: aarch64-unknown-linux-gnu
+            self_hosted: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup persistent cargo target dir (self-hosted)
+        if: matrix.self_hosted
+        run: |
+          echo "CARGO_TARGET_DIR=$HOME/.cache/cargo-target/dazzle-${{ matrix.target }}" >> $GITHUB_ENV
+          mkdir -p "$HOME/.cache/cargo-target/dazzle-${{ matrix.target }}"
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux' && !matrix.self_hosted
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            wget \
+            file \
+            xdg-utils \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config \
+            patchelf \
+            libglib2.0-bin \
+            libgdk-pixbuf2.0-bin \
+            desktop-file-utils \
+            shared-mime-info
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
+
+      - name: Setup Homebrew PATH (macOS self-hosted)
+        if: runner.os == 'macOS' && matrix.self_hosted
+        run: |
+          echo "/opt/homebrew/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/sbin" >> $GITHUB_PATH
+
+      - uses: actions/setup-node@v6
+        if: ${{ !matrix.self_hosted }}
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust toolchain
+        if: ${{ !matrix.self_hosted }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust build artifacts
+        if: ${{ !matrix.self_hosted }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+          shared-key: release-${{ matrix.target }}
+          cache-all-crates: true
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Clean up stale build artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
+          rm -rf "$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg" || true
+          rm -rf "$TARGET_DIR/${{ matrix.target }}/release/bundle/macos" || true
+
+      - name: Clean up stale build artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
+          rm -rf "$TARGET_DIR/${{ matrix.target }}/release/bundle/appimage" || true
+
+      - name: Build Tauri bundle
+        run: |
+          set -euxo pipefail
+          npm run tauri build -- --ci --target ${{ matrix.target }} --verbose ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '--bundles deb' || '' }}
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: ${{ runner.os == 'Linux' && '1' || '0' }}

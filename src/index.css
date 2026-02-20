@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-app-dark: #1e1e1e;
+  --color-app-darker: #121212;
+  --color-app-gray: #262626;
+  --color-app-light: #2e2e2e;
+  --color-app-accent: #3584e4;
+  --color-app-green: #23a55a;
+  --color-app-red: #e01b24;
+  --color-app-yellow: #f6c84c;
+  --color-app-text: #e6e6e7;
+  --color-app-muted: #a1a1aa;
+  --color-app-border: #3a3a3a;
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI',
+    'Ubuntu', 'Cantarell', 'Noto Sans', 'Liberation Sans', 'Helvetica Neue', 'Helvetica', 'Arial',
+    sans-serif;
+  --font-mono: 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace';
+}
+
+@layer base {
+  * {
+    @apply border-app-border;
+  }
+
+  body {
+    @apply bg-app-dark text-app-text font-sans;
+    margin: 0;
+    line-height: 1.35;
+    font-weight: 400;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  [data-tauri-drag-region] {
+    -webkit-app-region: drag;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  [data-tauri-drag-region='false'] {
+    -webkit-app-region: no-drag;
+  }
+
+  :root {
+    color-scheme: dark;
+    --accent: #3584e4;
+    --accent-soft: rgba(53, 132, 228, 0.15);
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-app-darker;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-app-muted rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-app-text/50;
+  }
+}
+
+@layer components {
+  .button-primary {
+    @apply bg-app-accent hover:bg-app-accent/90 text-white px-4 py-2 rounded-md font-medium transition-colors;
+  }
+
+  .button-secondary {
+    @apply bg-app-gray hover:bg-app-light text-app-text px-4 py-2 rounded-md font-medium transition-colors;
+  }
+
+  .input-field {
+    @apply bg-app-gray border border-app-border rounded-md px-3 py-1.5 text-app-text placeholder-app-muted focus:outline-none focus:border-app-accent;
+  }
+
+  .btn-icon {
+    @apply p-2 rounded-md hover:bg-app-light text-app-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+}
