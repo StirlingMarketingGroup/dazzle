@@ -1,0 +1,41 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    pub port: u16,
+    pub selected_printer: Option<String>,
+    pub auto_start: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            port: 9100,
+            selected_printer: None,
+            auto_start: false,
+        }
+    }
+}
+
+fn config_path() -> PathBuf {
+    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("dazzle");
+    std::fs::create_dir_all(&path).ok();
+    path.push("config.json");
+    path
+}
+
+pub fn load() -> AppConfig {
+    let path = config_path();
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn save(config: &AppConfig) -> Result<(), String> {
+    let path = config_path();
+    let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}

@@ -656,6 +656,7 @@ dependencies = [
  "tauri-plugin-os",
  "tauri-plugin-shell",
  "tokio",
+ "tower-http",
  "windows 0.62.2",
 ]
 
