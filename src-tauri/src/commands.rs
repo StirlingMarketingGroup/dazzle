@@ -30,7 +30,10 @@ pub async fn set_config(
 ) -> Result<(), String> {
     let (port_changed, autostart_changed) = {
         let current = state.config.read().map_err(|e| e.to_string())?;
-        (current.port != new_config.port, current.auto_start != new_config.auto_start)
+        (
+            current.port != new_config.port,
+            current.auto_start != new_config.auto_start,
+        )
     };
 
     config::save(&new_config)?;

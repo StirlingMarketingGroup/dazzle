@@ -152,7 +152,12 @@ async fn print_handler(
 async fn printers_handler() -> Result<Json<Vec<printing::Printer>>, (StatusCode, String)> {
     tokio::task::spawn_blocking(printing::discover)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Task panicked: {e}")))?
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Task panicked: {e}"),
+            )
+        })?
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }

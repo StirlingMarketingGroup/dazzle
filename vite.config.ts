@@ -25,4 +25,10 @@ export default defineConfig({
     sourcemap: !!process.env.TAURI_DEBUG,
     chunkSizeWarningLimit: 5000,
   },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
+  },
 });
