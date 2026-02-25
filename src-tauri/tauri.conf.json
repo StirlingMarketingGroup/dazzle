@@ -28,10 +28,6 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost"
-    },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": false
     }
   },
   "bundle": {
