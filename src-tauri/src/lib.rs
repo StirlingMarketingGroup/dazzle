@@ -110,8 +110,13 @@ pub fn run() {
                 autostart.disable().ok();
             }
 
-            // Hide window when launched with --hidden (autostart)
-            let hidden = std::env::args().any(|a| a == "--hidden");
+            // On Windows, always start hidden (runs as a background service).
+            // On macOS/Linux, hide only when launched with --hidden (autostart).
+            let hidden = if cfg!(target_os = "windows") {
+                true
+            } else {
+                std::env::args().any(|a| a == "--hidden")
+            };
             if hidden {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
