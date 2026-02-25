@@ -70,7 +70,7 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce(config) // get_config
         .mockResolvedValueOnce(printJobs) // get_print_jobs
         .mockResolvedValueOnce(true); // get_server_running
-      mockListen.mockResolvedValue(vi.fn());
+      mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
 
@@ -96,7 +96,7 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce([]) // get_print_jobs
         .mockResolvedValueOnce(false) // get_server_running
         .mockResolvedValue(undefined); // set_config (fire-and-forget)
-      mockListen.mockResolvedValue(vi.fn());
+      mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
 
@@ -116,7 +116,7 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce(false)
         .mockResolvedValue(undefined);
-      mockListen.mockResolvedValue(vi.fn());
+      mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
 
@@ -125,7 +125,7 @@ describe('useAppStore', () => {
 
     it('sets initError on failure', async () => {
       mockInvoke.mockRejectedValueOnce(new Error('backend down'));
-      mockListen.mockResolvedValue(vi.fn());
+      mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
 
@@ -140,7 +140,7 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce({ port: 29100, selected_printer: null, auto_start: false })
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce(false);
-      mockListen.mockResolvedValue(vi.fn());
+      mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
 
@@ -216,7 +216,7 @@ describe('useAppStore', () => {
         if (event === 'print-job') {
           printJobHandler = handler as (event: { payload: PrintJob }) => void;
         }
-        return vi.fn();
+        return () => {};
       });
 
       await useAppStore.getState().init();
@@ -254,7 +254,7 @@ describe('useAppStore', () => {
         if (event === 'print-job') {
           printJobHandler = handler as (event: { payload: PrintJob }) => void;
         }
-        return vi.fn();
+        return () => {};
       });
 
       await useAppStore.getState().init();
@@ -291,7 +291,7 @@ describe('useAppStore', () => {
         if (event === 'print-job') {
           printJobHandler = handler as (event: { payload: PrintJob }) => void;
         }
-        return vi.fn();
+        return () => {};
       });
 
       await useAppStore.getState().init();
