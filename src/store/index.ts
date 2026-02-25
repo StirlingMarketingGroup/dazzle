@@ -67,7 +67,7 @@ export const useAppStore = create<AppStore>((set) => ({
           }
           return { printJobs: jobs.slice(0, 100) };
         });
-      }),
+      })
     );
 
     listeners.push(
@@ -76,13 +76,13 @@ export const useAppStore = create<AppStore>((set) => ({
           serverRunning: event.payload,
           ...(event.payload ? { serverError: null } : {}),
         });
-      }),
+      })
     );
 
     listeners.push(
       await listen<string>('server-error', (event) => {
         set({ serverError: event.payload, serverRunning: false });
-      }),
+      })
     );
   },
 

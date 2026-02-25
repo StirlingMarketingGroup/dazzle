@@ -65,8 +65,7 @@ export default function ServerStatus() {
       )}
 
       <p className="text-xs text-app-muted mt-2">
-        Local print server that receives ZPL from your browser and sends it to your thermal printer.
-        {' '}
+        Local print server that receives ZPL from your browser and sends it to your thermal printer.{' '}
         <a
           href="https://github.com/StirlingMarketingGroup/dazzle"
           target="_blank"
