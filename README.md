@@ -73,8 +73,8 @@ await fetch('http://localhost:29100/print', {
 
 #### Query parameters
 
-| Parameter  | Description |
-|------------|-------------|
+| Parameter  | Description                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- |
 | `encoding` | Set to `base64` to have the server decode the body before printing. **Required for ZPL with binary image data.** |
 | `printer`  | Override the selected printer by name (e.g. `?printer=ZebraRaw`). Falls back to the printer selected in the app. |
 
