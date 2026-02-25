@@ -29,6 +29,43 @@ Dazzle runs in the system tray. Enable "Launch at login" in the app to start it 
 - Bixolon SRP-770III (ZPL emulation)
 - Any thermal printer with ZPL support
 
+## Client Library
+
+Install the TypeScript client for easy integration:
+
+```bash
+npm install dazzle-zpl
+```
+
+```typescript
+import { Dazzle } from 'dazzle-zpl';
+
+const dazzle = new Dazzle();
+
+// CORS-safe status check (no console errors when server is down)
+if (await dazzle.isRunning()) {
+  // Print a ZPL string
+  await dazzle.print('^XA^FO50,50^A0N,50,50^FDHello World^FS^XZ');
+
+  // Print from a URL (fetches as binary, base64-encodes automatically)
+  await dazzle.printURL('https://cdn.example.com/label.zpl');
+
+  // Print multiple labels in order
+  await dazzle.printURLs([label1Url, label2Url, label3Url]);
+
+  // Print raw bytes (Uint8Array or ArrayBuffer)
+  await dazzle.print(uint8Array);
+
+  // Print to a specific printer
+  await dazzle.printURL(labelUrl, { printer: 'Zebra_ZD420' });
+
+  // List available printers
+  const printers = await dazzle.printers();
+}
+```
+
+All `print` methods automatically base64-encode data for binary-safe transmission — no manual encoding needed.
+
 ## HTTP API
 
 The server listens on `http://localhost:29100` by default (configurable in the app).
@@ -58,6 +95,12 @@ await fetch('http://localhost:29100/print?encoding=base64', {
   method: 'POST',
   body: btoa(binary),
 });
+```
+
+Or just use the client library which handles all of this:
+
+```js
+await dazzle.printURL('https://example.com/label.zpl');
 ```
 
 #### Plain text ZPL (ASCII only)
@@ -109,49 +152,6 @@ List available printers.
 const res = await fetch('http://localhost:29100/printers');
 const printers = await res.json();
 // [{ "name": "ZebraRaw", "is_default": true }, ...]
-```
-
-## Client Integration Example
-
-Detect Dazzle, print ZPL labels, fall back gracefully:
-
-```js
-async function printShippingLabels(zplUrls) {
-  // Check if Dazzle is running
-  let dazzleAvailable = false;
-  try {
-    const res = await fetch('http://localhost:29100/status');
-    dazzleAvailable = res.ok;
-  } catch {}
-
-  if (!dazzleAvailable) {
-    // Fall back to browser print dialog or show install prompt
-    window.open('https://github.com/StirlingMarketingGroup/dazzle/releases');
-    return;
-  }
-
-  // Print each label sequentially to preserve order
-  for (const url of zplUrls) {
-    const response = await fetch(url);
-    const buffer = await response.arrayBuffer();
-
-    // Base64 encode raw bytes
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-
-    const res = await fetch('http://localhost:29100/print?encoding=base64', {
-      method: 'POST',
-      body: btoa(binary),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Print failed: ${await res.text()}`);
-    }
-  }
-}
 ```
 
 ## Tech Stack

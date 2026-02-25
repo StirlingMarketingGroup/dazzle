@@ -26,6 +26,18 @@ export interface PrintOptions {
   printer?: string;
 }
 
+/**
+ * Base64-encode a Uint8Array for binary-safe transmission.
+ * Uses btoa with a latin1 intermediate string.
+ */
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export class Dazzle {
   private baseUrl: string;
 
@@ -36,11 +48,18 @@ export class Dazzle {
     this.baseUrl = `${protocol}://${host}:${port}`;
   }
 
-  /** Check if the Dazzle server is reachable. */
+  /**
+   * Check if the Dazzle server is reachable.
+   *
+   * Uses `no-cors` mode to avoid noisy CORS console errors when
+   * the server is not running.
+   */
   async isRunning(): Promise<boolean> {
     try {
-      await this.status();
-      return true;
+      // An opaque response (type "opaque") means the server responded.
+      // A network error (TypeError) means it's unreachable.
+      const res = await fetch(`${this.baseUrl}/status`, { mode: 'no-cors' });
+      return res.type === 'opaque' || res.ok;
     } catch {
       return false;
     }
@@ -63,16 +82,37 @@ export class Dazzle {
   /**
    * Send ZPL to be printed.
    *
-   * Uses the server's configured default printer unless
-   * `options.printer` is specified.
+   * Accepts a `string` (ASCII ZPL), `Uint8Array`, or `ArrayBuffer`.
+   * Binary data is automatically base64-encoded for safe transmission.
+   * Strings are also base64-encoded by default to avoid any encoding issues.
    */
-  async print(zpl: string, options?: PrintOptions): Promise<PrintResult> {
+  async print(
+    zpl: string | Uint8Array | ArrayBuffer,
+    options?: PrintOptions
+  ): Promise<PrintResult> {
     const url = new URL(`${this.baseUrl}/print`);
+    url.searchParams.set('encoding', 'base64');
     if (options?.printer) {
       url.searchParams.set('printer', options.printer);
     }
 
-    const res = await fetch(url, { method: 'POST', body: zpl });
+    let bytes: Uint8Array;
+    if (typeof zpl === 'string') {
+      // Encode string as latin1 bytes to preserve ZPL binary data
+      bytes = new Uint8Array(zpl.length);
+      for (let i = 0; i < zpl.length; i++) {
+        bytes[i] = zpl.charCodeAt(i) & 0xff;
+      }
+    } else if (zpl instanceof ArrayBuffer) {
+      bytes = new Uint8Array(zpl);
+    } else {
+      bytes = zpl;
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: toBase64(bytes),
+    });
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -80,6 +120,48 @@ export class Dazzle {
     }
 
     return res.json();
+  }
+
+  /**
+   * Fetch a ZPL file from a URL and print it.
+   *
+   * Fetches as binary (ArrayBuffer) to preserve image data,
+   * then base64-encodes and sends to the print server.
+   */
+  async printURL(url: string, options?: PrintOptions): Promise<PrintResult> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new DazzleError(`Failed to fetch ZPL from ${url}: ${response.status}`, response.status);
+    }
+    const buffer = await response.arrayBuffer();
+    return this.print(buffer, options);
+  }
+
+  /**
+   * Print multiple ZPL payloads sequentially to preserve print order.
+   *
+   * Each item can be a `string`, `Uint8Array`, or `ArrayBuffer`.
+   */
+  async printAll(
+    items: (string | Uint8Array | ArrayBuffer)[],
+    options?: PrintOptions
+  ): Promise<PrintResult[]> {
+    const results: PrintResult[] = [];
+    for (const item of items) {
+      results.push(await this.print(item, options));
+    }
+    return results;
+  }
+
+  /**
+   * Fetch and print multiple ZPL files sequentially to preserve print order.
+   */
+  async printURLs(urls: string[], options?: PrintOptions): Promise<PrintResult[]> {
+    const results: PrintResult[] = [];
+    for (const url of urls) {
+      results.push(await this.printURL(url, options));
+    }
+    return results;
   }
 }
 
