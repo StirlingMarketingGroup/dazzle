@@ -26,6 +26,11 @@ export interface PrintOptions {
   printer?: string;
 }
 
+export interface WatchOptions {
+  /** Polling interval in milliseconds. @default 5000 */
+  interval?: number;
+}
+
 /**
  * Base64-encode a Uint8Array for binary-safe transmission.
  * Uses btoa with a latin1 intermediate string.
@@ -40,12 +45,77 @@ function toBase64(bytes: Uint8Array): string {
 
 export class Dazzle {
   private baseUrl: string;
+  private watchers = new Set<(running: boolean) => void>();
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private pollInterval = 0;
+  private lastStatus: boolean | null = null;
 
   constructor(options?: DazzleOptions) {
     const host = options?.host ?? 'localhost';
     const port = options?.port ?? 29100;
     const protocol = options?.protocol ?? 'http';
     this.baseUrl = `${protocol}://${host}:${port}`;
+  }
+
+  /**
+   * Watch for server status changes. The callback fires immediately with
+   * the current status, then again whenever the status changes.
+   *
+   * Returns an unwatch function. When all watchers unsubscribe, polling stops.
+   *
+   * ```ts
+   * const unwatch = dazzle.watch((running) => {
+   *   banner.classList.toggle('d-none', running);
+   * });
+   * // later: unwatch();
+   * ```
+   */
+  watch(callback: (running: boolean) => void, options?: WatchOptions): () => void {
+    const interval = options?.interval ?? 5000;
+    this.watchers.add(callback);
+
+    // Fire immediately with current known status, then poll
+    this.isRunning().then((running) => {
+      if (this.watchers.has(callback)) {
+        callback(running);
+        this.lastStatus = running;
+      }
+    });
+
+    // Start or restart polling at the shortest requested interval
+    if (this.pollTimer === null || interval < this.pollInterval) {
+      this.startPolling(interval);
+    }
+
+    return () => {
+      this.watchers.delete(callback);
+      if (this.watchers.size === 0) {
+        this.stopPolling();
+      }
+    };
+  }
+
+  private startPolling(interval: number): void {
+    this.stopPolling();
+    this.pollInterval = interval;
+    this.pollTimer = setInterval(async () => {
+      const running = await this.isRunning();
+      if (running !== this.lastStatus) {
+        this.lastStatus = running;
+        for (const cb of this.watchers) {
+          cb(running);
+        }
+      }
+    }, interval);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer !== null) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+      this.pollInterval = 0;
+      this.lastStatus = null;
+    }
   }
 
   /**
