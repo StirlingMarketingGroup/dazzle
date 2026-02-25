@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { platform } from '@tauri-apps/plugin-os';
 import { useAppStore } from '@/store';
 import TitleBar from '@/components/TitleBar';
 import ServerStatus from '@/components/ServerStatus';
@@ -9,8 +10,10 @@ export default function App() {
   const init = useAppStore((s) => s.init);
   const loading = useAppStore((s) => s.loading);
   const initError = useAppStore((s) => s.initError);
+  const [isMac, setIsMac] = useState(false);
 
   useEffect(() => {
+    setIsMac(platform() === 'macos');
     init();
   }, [init]);
 
@@ -39,7 +42,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-app-darker">
-      <TitleBar />
+      {isMac && <TitleBar />}
       <div className="flex-1 overflow-y-auto flex flex-col">
         <ServerStatus />
         <PrinterSelect />

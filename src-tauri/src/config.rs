@@ -51,3 +51,135 @@ pub fn save(config: &AppConfig) -> Result<(), String> {
     let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_expected_values() {
+        let config = AppConfig::default();
+        assert_eq!(config.port, 29100);
+        assert!(config.selected_printer.is_none());
+        assert!(!config.auto_start);
+    }
+
+    #[test]
+    fn config_roundtrips_through_json() {
+        let config = AppConfig {
+            port: 8080,
+            selected_printer: Some("Zebra ZD420".to_string()),
+            auto_start: true,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.port, 8080);
+        assert_eq!(
+            deserialized.selected_printer.as_deref(),
+            Some("Zebra ZD420")
+        );
+        assert!(deserialized.auto_start);
+    }
+
+    #[test]
+    fn config_deserializes_with_null_printer() {
+        let json = r#"{"port":9100,"selected_printer":null,"auto_start":false}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.port, 9100);
+        assert!(config.selected_printer.is_none());
+    }
+
+    #[test]
+    fn save_and_load_via_filesystem() {
+        let dir = std::env::temp_dir().join(format!("dazzle-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+
+        let config = AppConfig {
+            port: 3000,
+            selected_printer: Some("Test Printer".to_string()),
+            auto_start: true,
+        };
+
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        std::fs::write(&path, &json).unwrap();
+
+        let loaded: AppConfig =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(loaded.port, 3000);
+        assert_eq!(loaded.selected_printer.as_deref(), Some("Test Printer"));
+        assert!(loaded.auto_start);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn malformed_json_does_not_crash() {
+        let result = serde_json::from_str::<AppConfig>("not valid json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn partial_json_with_missing_fields_fails() {
+        // Missing required fields should fail deserialization
+        let result = serde_json::from_str::<AppConfig>(r#"{"port":9100}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn config_serializes_to_expected_json_structure() {
+        let config = AppConfig {
+            port: 29100,
+            selected_printer: None,
+            auto_start: false,
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&config).unwrap();
+        assert_eq!(json["port"], 29100);
+        assert!(json["selected_printer"].is_null());
+        assert_eq!(json["auto_start"], false);
+    }
+
+    #[test]
+    fn port_boundary_values() {
+        // Port 1 (minimum valid)
+        let config = AppConfig {
+            port: 1,
+            selected_printer: None,
+            auto_start: false,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.port, 1);
+
+        // Port 65535 (maximum valid)
+        let config = AppConfig {
+            port: 65535,
+            selected_printer: None,
+            auto_start: false,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.port, 65535);
+    }
+
+    #[test]
+    fn config_with_unicode_printer_name() {
+        let config = AppConfig {
+            port: 29100,
+            selected_printer: Some("Druckerei-Schreibmaschine".to_string()),
+            auto_start: false,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            loaded.selected_printer.as_deref(),
+            Some("Druckerei-Schreibmaschine")
+        );
+    }
+}

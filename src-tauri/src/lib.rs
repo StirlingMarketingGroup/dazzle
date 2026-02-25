@@ -3,6 +3,7 @@ mod config;
 mod printing;
 mod server;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use tauri::{Emitter, Manager};
 
@@ -71,6 +72,7 @@ fn toggle_window(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .args(["--hidden"])
@@ -139,8 +141,22 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                static NOTIFIED: AtomicBool = AtomicBool::new(false);
+
                 api.prevent_close();
                 let _ = window.hide();
+
+                // Show a one-time notification so the user knows we're still running
+                if !NOTIFIED.swap(true, Ordering::Relaxed) {
+                    use tauri_plugin_notification::NotificationExt;
+                    let _ = window
+                        .app_handle()
+                        .notification()
+                        .builder()
+                        .title("Dazzle is still running")
+                        .body("The print server is running in the background. Right-click the tray icon to quit.")
+                        .show();
+                }
             }
         })
         .run(tauri::generate_context!())
