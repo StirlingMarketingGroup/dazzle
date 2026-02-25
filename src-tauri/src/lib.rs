@@ -4,12 +4,12 @@ mod printing;
 mod server;
 
 use std::sync::{Arc, RwLock};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub config: RwLock<config::AppConfig>,
     pub print_jobs: RwLock<Vec<server::PrintJob>>,
-    pub server_handle: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    pub server_handle: tokio::sync::Mutex<Option<server::ServerHandle>>,
     pub app_handle: tauri::AppHandle,
 }
 
@@ -17,8 +17,7 @@ pub async fn restart_server(state: &Arc<AppState>) -> Result<(), String> {
     let mut handle_guard = state.server_handle.lock().await;
 
     if let Some(h) = handle_guard.take() {
-        h.abort();
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        h.shutdown().await;
     }
 
     let handle = server::start(state.clone()).await?;
@@ -60,10 +59,10 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 fn toggle_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
-            window.hide().unwrap();
+            let _ = window.hide();
         } else {
-            window.show().unwrap();
-            window.set_focus().unwrap();
+            let _ = window.show();
+            let _ = window.set_focus();
         }
     }
 }
@@ -71,6 +70,11 @@ fn toggle_window(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args(["--hidden"])
+                .build(),
+        )
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(
@@ -88,9 +92,29 @@ pub fn run() {
             commands::get_config,
             commands::set_config,
             commands::get_print_jobs,
+            commands::get_server_running,
+            commands::restart_server,
         ])
         .setup(|app| {
             let cfg = config::load();
+
+            // Sync autostart with config
+            use tauri_plugin_autostart::ManagerExt;
+            let autostart = app.autolaunch();
+            if cfg.auto_start {
+                autostart.enable().ok();
+            } else {
+                autostart.disable().ok();
+            }
+
+            // Hide window when launched with --hidden (autostart)
+            let hidden = std::env::args().any(|a| a == "--hidden");
+            if hidden {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+
             let state = Arc::new(AppState {
                 config: RwLock::new(cfg),
                 print_jobs: RwLock::new(Vec::new()),
@@ -104,6 +128,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = restart_server(&state).await {
                     log::error!("Failed to start server: {e}");
+                    state.app_handle.emit("server-error", &e).ok();
                 }
             });
 
@@ -112,10 +137,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Close to tray instead of quitting
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                window.hide().unwrap();
+                let _ = window.hide();
             }
         })
         .run(tauri::generate_context!())

@@ -7,7 +7,7 @@ export interface PrintJob {
   id: string;
   printer: string;
   timestamp: number;
-  status: 'pending' | 'printing' | 'completed' | 'failed';
+  status: 'printing' | 'completed' | 'failed';
   zpl_preview?: string;
   error?: string;
 }

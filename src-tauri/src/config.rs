@@ -21,17 +21,29 @@ impl Default for AppConfig {
 fn config_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("dazzle");
-    std::fs::create_dir_all(&path).ok();
+    if let Err(e) = std::fs::create_dir_all(&path) {
+        log::warn!("Failed to create config directory: {e}");
+    }
     path.push("config.json");
     path
 }
 
 pub fn load() -> AppConfig {
     let path = config_path();
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    match std::fs::read_to_string(&path) {
+        Ok(s) => match serde_json::from_str(&s) {
+            Ok(config) => config,
+            Err(e) => {
+                log::warn!("Failed to parse config at {}: {e}", path.display());
+                AppConfig::default()
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => AppConfig::default(),
+        Err(e) => {
+            log::warn!("Failed to read config at {}: {e}", path.display());
+            AppConfig::default()
+        }
+    }
 }
 
 pub fn save(config: &AppConfig) -> Result<(), String> {
