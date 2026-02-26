@@ -36,11 +36,12 @@ export interface WatchOptions {
  * Uses btoa with a latin1 intermediate string.
  */
 function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const CHUNK_SIZE = 0x8000;
+  const chunks: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    chunks.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE)));
   }
-  return btoa(binary);
+  return btoa(chunks.join(''));
 }
 
 export class Dazzle {
