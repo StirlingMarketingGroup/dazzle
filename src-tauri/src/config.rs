@@ -85,9 +85,9 @@ mod tests {
 
     #[test]
     fn config_deserializes_with_null_printer() {
-        let json = r#"{"port":9100,"selected_printer":null,"auto_start":false}"#;
+        let json = r#"{"port":29100,"selected_printer":null,"auto_start":false}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.port, 9100);
+        assert_eq!(config.port, 29100);
         assert!(config.selected_printer.is_none());
     }
 
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn partial_json_with_missing_fields_fails() {
         // Missing required fields should fail deserialization
-        let result = serde_json::from_str::<AppConfig>(r#"{"port":9100}"#);
+        let result = serde_json::from_str::<AppConfig>(r#"{"port":29100}"#);
         assert!(result.is_err());
     }
 
