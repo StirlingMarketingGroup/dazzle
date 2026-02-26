@@ -44,12 +44,8 @@
     ],
     "windows": {
       "wix": {
-        "fragmentPaths": [
-          "wix/autostart.wxs"
-        ],
-        "componentGroupRefs": [
-          "AutoStartGroup"
-        ]
+        "fragmentPaths": ["wix/autostart.wxs"],
+        "componentGroupRefs": ["AutoStartGroup"]
       }
     }
   }
