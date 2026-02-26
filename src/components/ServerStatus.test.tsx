@@ -69,6 +69,51 @@ describe('ServerStatus', () => {
     expect(restartServer).toHaveBeenCalled();
   });
 
+  it('shows auto-start checkbox checked when autostart is enabled', () => {
+    useAppStore.setState({
+      serverRunning: true,
+      serverError: null,
+      config: { port: 29100, selected_printer: null },
+      autostart: true,
+    });
+
+    render(<ServerStatus />);
+    const checkbox = screen.getByLabelText('Launch at login');
+    expect(checkbox).toBeChecked();
+  });
+
+  it('shows auto-start checkbox unchecked when autostart is disabled', () => {
+    useAppStore.setState({
+      serverRunning: true,
+      serverError: null,
+      config: { port: 29100, selected_printer: null },
+      autostart: false,
+    });
+
+    render(<ServerStatus />);
+    const checkbox = screen.getByLabelText('Launch at login');
+    expect(checkbox).not.toBeChecked();
+  });
+
+  it('calls setAutostart when checkbox is toggled', async () => {
+    const user = userEvent.setup();
+    const setAutostart = vi.fn().mockResolvedValue(undefined);
+
+    useAppStore.setState({
+      serverRunning: true,
+      serverError: null,
+      config: { port: 29100, selected_printer: null },
+      autostart: false,
+      setAutostart,
+    });
+
+    render(<ServerStatus />);
+    const checkbox = screen.getByLabelText('Launch at login');
+    await user.click(checkbox);
+
+    expect(setAutostart).toHaveBeenCalledWith(true);
+  });
+
   it('filters non-numeric characters from port input', async () => {
     const user = userEvent.setup();
 
