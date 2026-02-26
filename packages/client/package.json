@@ -1,6 +1,6 @@
 {
   "name": "dazzle-zpl",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TypeScript client for the Dazzle ZPL print server",
   "license": "MIT",
   "repository": {
