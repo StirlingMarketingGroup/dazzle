@@ -5,8 +5,9 @@
 mod platform {
     use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
-        HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_SZ,
+        RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW,
+        RegSetValueExW, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_OPTION_NON_VOLATILE,
+        REG_SZ,
     };
     use windows::core::HSTRING;
 
@@ -33,9 +34,10 @@ mod platform {
             let subkey = HSTRING::from(RUN_KEY);
             let status =
                 RegOpenKeyExW(HKEY_CURRENT_USER, &subkey, None, KEY_READ, &mut hkey);
-            if status.0 != 0 {
+            if status == ERROR_FILE_NOT_FOUND {
                 return Ok(false);
             }
+            win32_ok(status)?;
 
             let name = HSTRING::from(VALUE_NAME);
             let result = RegQueryValueExW(hkey, &name, None, None, None, None);
@@ -55,12 +57,16 @@ mod platform {
         unsafe {
             let mut hkey = Default::default();
             let subkey = HSTRING::from(RUN_KEY);
-            win32_ok(RegOpenKeyExW(
+            win32_ok(RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 &subkey,
                 None,
+                None,
+                REG_OPTION_NON_VOLATILE,
                 KEY_WRITE,
+                None,
                 &mut hkey,
+                None,
             ))?;
 
             let name = HSTRING::from(VALUE_NAME);
@@ -77,9 +83,10 @@ mod platform {
             let subkey = HSTRING::from(RUN_KEY);
             let status =
                 RegOpenKeyExW(HKEY_CURRENT_USER, &subkey, None, KEY_WRITE, &mut hkey);
-            if status.0 != 0 {
-                return Ok(()); // Key doesn't exist, nothing to disable
+            if status == ERROR_FILE_NOT_FOUND {
+                return Ok(()); // Key doesn't exist, so it's already disabled
             }
+            win32_ok(status)?;
 
             let name = HSTRING::from(VALUE_NAME);
             let result = RegDeleteValueW(hkey, &name);
