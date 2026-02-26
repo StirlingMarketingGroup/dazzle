@@ -382,12 +382,12 @@ jobs:
 
             | Platform | Installer |
             |----------|-----------|
-            | **macOS** (Apple Silicon — M1/M2/M3/M4) | `macOS_Apple-Silicon.dmg` |
-            | **macOS** (Intel) | `macOS_Intel.dmg` |
-            | **Windows** (64-bit) | `Windows_x64.msi` or `Windows_x64_Setup.exe` |
-            | **Windows** (ARM) | `Windows_ARM64.msi` or `Windows_ARM64_Setup.exe` |
-            | **Linux** (x64) | `Linux_x64.AppImage` |
-            | **Linux** (ARM64) | `Linux_ARM64.AppImage` or `Linux_ARM64.deb` |
+            | **macOS** (Apple Silicon — M1/M2/M3/M4) | `…macOS_Apple-Silicon.dmg` |
+            | **macOS** (Intel) | `…macOS_Intel.dmg` |
+            | **Windows** (64-bit) | `…Windows_x64.msi` or `…Windows_x64_Setup.exe` |
+            | **Windows** (ARM) | `…Windows_ARM64.msi` or `…Windows_ARM64_Setup.exe` |
+            | **Linux** (x64) | `…Linux_x64.AppImage` |
+            | **Linux** (ARM64) | `…Linux_ARM64.AppImage` or `…Linux_ARM64.deb` |
           releaseDraft: false
           prerelease: ${{ startsWith(env.RELEASE_TAG, 'v0.') }}
           args: >-
@@ -501,7 +501,7 @@ jobs:
             if [ -n "$new_name" ] && [ "$name" != "$new_name" ]; then
               echo "Renaming: $name → $new_name"
               gh api "repos/${{ github.repository }}/releases/assets/$id" \
-                -X PATCH -f name="$new_name" --silent
+                -X PATCH -f name="$new_name" --silent || echo "  Warning: rename failed (may already exist), continuing"
             fi
           done
 
