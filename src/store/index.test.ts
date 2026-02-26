@@ -32,7 +32,7 @@ describe('useAppStore', () => {
       expect(state.config).toEqual({
         port: 29100,
         selected_printer: null,
-              });
+      });
       expect(state.printJobs).toEqual([]);
       expect(state.serverRunning).toBe(false);
       expect(state.serverError).toBeNull();
@@ -50,7 +50,7 @@ describe('useAppStore', () => {
     const config: AppConfig = {
       port: 9100,
       selected_printer: 'Zebra ZD420',
-          };
+    };
 
     const printJobs: PrintJob[] = [
       {
@@ -85,7 +85,7 @@ describe('useAppStore', () => {
       const noSelectionConfig: AppConfig = {
         port: 29100,
         selected_printer: null,
-              };
+      };
 
       mockInvoke
         .mockResolvedValueOnce(printers) // list_printers
@@ -167,7 +167,7 @@ describe('useAppStore', () => {
       const newConfig: AppConfig = {
         port: 8080,
         selected_printer: 'Test Printer',
-        };
+      };
 
       await useAppStore.getState().updateConfig(newConfig);
 
