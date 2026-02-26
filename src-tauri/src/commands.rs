@@ -26,27 +26,13 @@ pub fn get_config(state: tauri::State<'_, Arc<AppState>>) -> Result<config::AppC
 pub async fn set_config(
     new_config: config::AppConfig,
     state: tauri::State<'_, Arc<AppState>>,
-    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let (port_changed, autostart_changed) = {
+    let port_changed = {
         let current = state.config.read().map_err(|e| e.to_string())?;
-        (
-            current.port != new_config.port,
-            current.auto_start != new_config.auto_start,
-        )
+        current.port != new_config.port
     };
 
     config::save(&new_config)?;
-
-    if autostart_changed {
-        use tauri_plugin_autostart::ManagerExt;
-        let autostart = app.autolaunch();
-        if new_config.auto_start {
-            autostart.enable().map_err(|e| e.to_string())?;
-        } else {
-            autostart.disable().map_err(|e| e.to_string())?;
-        }
-    }
 
     {
         let mut config = state.config.write().map_err(|e| e.to_string())?;

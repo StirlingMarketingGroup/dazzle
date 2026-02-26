@@ -10,7 +10,7 @@ const mockListen = vi.mocked(listen);
 function resetStore() {
   useAppStore.setState({
     printers: [],
-    config: { port: 29100, selected_printer: null, auto_start: false },
+    config: { port: 29100, selected_printer: null },
     printJobs: [],
     serverRunning: false,
     serverError: null,
@@ -32,8 +32,7 @@ describe('useAppStore', () => {
       expect(state.config).toEqual({
         port: 29100,
         selected_printer: null,
-        auto_start: false,
-      });
+              });
       expect(state.printJobs).toEqual([]);
       expect(state.serverRunning).toBe(false);
       expect(state.serverError).toBeNull();
@@ -51,8 +50,7 @@ describe('useAppStore', () => {
     const config: AppConfig = {
       port: 9100,
       selected_printer: 'Zebra ZD420',
-      auto_start: false,
-    };
+          };
 
     const printJobs: PrintJob[] = [
       {
@@ -87,8 +85,7 @@ describe('useAppStore', () => {
       const noSelectionConfig: AppConfig = {
         port: 29100,
         selected_printer: null,
-        auto_start: false,
-      };
+              };
 
       mockInvoke
         .mockResolvedValueOnce(printers) // list_printers
@@ -112,7 +109,7 @@ describe('useAppStore', () => {
 
       mockInvoke
         .mockResolvedValueOnce(printersNoDefault)
-        .mockResolvedValueOnce({ port: 29100, selected_printer: null, auto_start: false })
+        .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce(false)
         .mockResolvedValue(undefined);
@@ -137,7 +134,7 @@ describe('useAppStore', () => {
     it('registers event listeners for print-job, server-status, server-error', async () => {
       mockInvoke
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce({ port: 29100, selected_printer: null, auto_start: false })
+        .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce(false);
       mockListen.mockResolvedValue(() => {});
@@ -170,8 +167,7 @@ describe('useAppStore', () => {
       const newConfig: AppConfig = {
         port: 8080,
         selected_printer: 'Test Printer',
-        auto_start: true,
-      };
+        };
 
       await useAppStore.getState().updateConfig(newConfig);
 
@@ -206,7 +202,7 @@ describe('useAppStore', () => {
     it('adds new jobs to the front of the list', async () => {
       mockInvoke
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce({ port: 29100, selected_printer: null, auto_start: false })
+        .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce(false);
 
@@ -245,7 +241,7 @@ describe('useAppStore', () => {
 
       mockInvoke
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce({ port: 29100, selected_printer: null, auto_start: false })
+        .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([existingJob])
         .mockResolvedValueOnce(false);
 
@@ -282,7 +278,7 @@ describe('useAppStore', () => {
 
       mockInvoke
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce({ port: 29100, selected_printer: null, auto_start: false })
+        .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce(existingJobs)
         .mockResolvedValueOnce(false);
 

@@ -22,7 +22,7 @@ let listeners: UnlistenFn[] = [];
 
 export const useAppStore = create<AppStore>((set) => ({
   printers: [],
-  config: { port: 29100, selected_printer: null, auto_start: false },
+  config: { port: 29100, selected_printer: null },
   printJobs: [],
   serverRunning: false,
   serverError: null,

@@ -9,7 +9,7 @@ describe('ServerStatus', () => {
     useAppStore.setState({
       serverRunning: true,
       serverError: null,
-      config: { port: 29100, selected_printer: null, auto_start: false },
+      config: { port: 29100, selected_printer: null },
     });
 
     render(<ServerStatus />);
@@ -21,7 +21,7 @@ describe('ServerStatus', () => {
     useAppStore.setState({
       serverRunning: false,
       serverError: null,
-      config: { port: 29100, selected_printer: null, auto_start: false },
+      config: { port: 29100, selected_printer: null },
     });
 
     render(<ServerStatus />);
@@ -33,7 +33,7 @@ describe('ServerStatus', () => {
     useAppStore.setState({
       serverRunning: false,
       serverError: 'Port 9100 already in use',
-      config: { port: 9100, selected_printer: null, auto_start: false },
+      config: { port: 9100, selected_printer: null },
     });
 
     render(<ServerStatus />);
@@ -44,7 +44,7 @@ describe('ServerStatus', () => {
     useAppStore.setState({
       serverRunning: true,
       serverError: null,
-      config: { port: 8080, selected_printer: null, auto_start: false },
+      config: { port: 8080, selected_printer: null },
     });
 
     render(<ServerStatus />);
@@ -59,7 +59,7 @@ describe('ServerStatus', () => {
     useAppStore.setState({
       serverRunning: true,
       serverError: null,
-      config: { port: 29100, selected_printer: null, auto_start: false },
+      config: { port: 29100, selected_printer: null },
       restartServer,
     });
 
@@ -69,25 +69,13 @@ describe('ServerStatus', () => {
     expect(restartServer).toHaveBeenCalled();
   });
 
-  it('shows auto-start checkbox', () => {
-    useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
-      config: { port: 29100, selected_printer: null, auto_start: true },
-    });
-
-    render(<ServerStatus />);
-    const checkbox = screen.getByLabelText('Launch at login');
-    expect(checkbox).toBeChecked();
-  });
-
   it('filters non-numeric characters from port input', async () => {
     const user = userEvent.setup();
 
     useAppStore.setState({
       serverRunning: true,
       serverError: null,
-      config: { port: 29100, selected_printer: null, auto_start: false },
+      config: { port: 29100, selected_printer: null },
     });
 
     render(<ServerStatus />);

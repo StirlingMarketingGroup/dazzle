@@ -155,12 +155,14 @@ fn toggle_window(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second instance was launched — just show the existing window
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .args(["--hidden"])
-                .build(),
-        )
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(
@@ -184,17 +186,8 @@ pub fn run() {
         .setup(|app| {
             let cfg = config::load();
 
-            // Sync autostart with config
-            use tauri_plugin_autostart::ManagerExt;
-            let autostart = app.autolaunch();
-            if cfg.auto_start {
-                autostart.enable().ok();
-            } else {
-                autostart.disable().ok();
-            }
-
             // On Windows, always start hidden (runs as a background service).
-            // On macOS/Linux, hide only when launched with --hidden (autostart).
+            // On macOS/Linux, hide only when launched with --hidden (autostart via system mechanism).
             let hidden = if cfg!(target_os = "windows") {
                 true
             } else {
