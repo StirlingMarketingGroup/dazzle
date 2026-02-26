@@ -5,7 +5,7 @@ mod server;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Listener, Manager};
 
 pub struct AppState {
     pub config: RwLock<config::AppConfig>,
@@ -26,6 +26,84 @@ pub async fn restart_server(state: &Arc<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Create a copy of the base icon with a colored status badge in the bottom-right corner.
+fn create_status_icon(
+    base: &tauri::image::Image<'_>,
+    running: bool,
+) -> tauri::image::Image<'static> {
+    let width = base.width();
+    let height = base.height();
+    let mut rgba = base.rgba().to_vec();
+
+    let size = width.min(height) as f64;
+    let badge_r = (size * 0.20).max(3.0);
+    let border_w = (size * 0.04).max(1.0);
+    let total_r = badge_r + border_w;
+    let margin = size * 0.05;
+    let cx = width as f64 - total_r - margin;
+    let cy = height as f64 - total_r - margin;
+
+    let (cr, cg, cb): (u8, u8, u8) = if running {
+        (76, 175, 80)
+    } else {
+        (244, 67, 54)
+    };
+
+    for y in 0..height {
+        for x in 0..width {
+            let dx = x as f64 + 0.5 - cx;
+            let dy = y as f64 + 0.5 - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+
+            if dist <= total_r + 0.5 {
+                let idx = ((y * width + x) * 4) as usize;
+                let aa = (total_r + 0.5 - dist).clamp(0.0, 1.0);
+
+                let (r, g, b) = if dist <= badge_r {
+                    (cr, cg, cb)
+                } else {
+                    (255, 255, 255)
+                };
+
+                // Alpha-composite badge over existing pixel
+                let src_a = aa;
+                let dst_a = rgba[idx + 3] as f64 / 255.0;
+                let out_a = src_a + dst_a * (1.0 - src_a);
+
+                if out_a > 0.0 {
+                    rgba[idx] = ((r as f64 * src_a
+                        + rgba[idx] as f64 * dst_a * (1.0 - src_a))
+                        / out_a) as u8;
+                    rgba[idx + 1] = ((g as f64 * src_a
+                        + rgba[idx + 1] as f64 * dst_a * (1.0 - src_a))
+                        / out_a) as u8;
+                    rgba[idx + 2] = ((b as f64 * src_a
+                        + rgba[idx + 2] as f64 * dst_a * (1.0 - src_a))
+                        / out_a) as u8;
+                    rgba[idx + 3] = (out_a * 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    tauri::image::Image::new_owned(rgba, width, height)
+}
+
+fn update_tray_status(app: &tauri::AppHandle, running: bool) {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Some(base_icon) = app.default_window_icon() {
+            let icon = create_status_icon(base_icon, running);
+            let _ = tray.set_icon(Some(icon));
+        }
+        let tooltip = if running {
+            "Dazzle — Server running"
+        } else {
+            "Dazzle — Server stopped"
+        };
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+}
+
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -34,9 +112,15 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
-    TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
-        .tooltip("Dazzle — ZPL Print Server")
+    // Start with a red badge — switches to green once the server binds
+    let icon = app
+        .default_window_icon()
+        .map(|base| create_status_icon(base, false))
+        .unwrap();
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(icon)
+        .tooltip("Dazzle — Starting…")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => toggle_window(app),
@@ -132,15 +216,23 @@ pub fn run() {
 
             app.manage(state.clone());
 
-            // Start the HTTP print server
+            setup_tray(app)?;
+
+            // Update tray icon when server status changes
+            let handle = app.handle().clone();
+            app.listen("server-status", move |event| {
+                if let Ok(running) = serde_json::from_str::<bool>(event.payload()) {
+                    update_tray_status(&handle, running);
+                }
+            });
+
+            // Start the HTTP print server (after listener is registered to avoid race)
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = restart_server(&state).await {
                     log::error!("Failed to start server: {e}");
                     state.app_handle.emit("server-error", &e).ok();
                 }
             });
-
-            setup_tray(app)?;
 
             Ok(())
         })
