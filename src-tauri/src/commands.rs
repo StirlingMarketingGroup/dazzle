@@ -1,4 +1,4 @@
-use crate::{config, printing, server, AppState};
+use crate::{autostart, config, printing, server, AppState};
 use std::sync::Arc;
 
 #[tauri::command]
@@ -55,6 +55,20 @@ pub async fn get_server_running(state: tauri::State<'_, Arc<AppState>>) -> Resul
 #[tauri::command]
 pub async fn restart_server(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::restart_server(state.inner()).await
+}
+
+#[tauri::command]
+pub fn get_autostart() -> Result<bool, String> {
+    autostart::is_enabled()
+}
+
+#[tauri::command]
+pub fn set_autostart(enabled: bool) -> Result<(), String> {
+    if enabled {
+        autostart::enable()
+    } else {
+        autostart::disable()
+    }
 }
 
 #[tauri::command]

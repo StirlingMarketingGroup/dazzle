@@ -1,3 +1,4 @@
+mod autostart;
 mod commands;
 mod config;
 mod printing;
@@ -182,6 +183,8 @@ pub fn run() {
             commands::get_print_jobs,
             commands::get_server_running,
             commands::restart_server,
+            commands::get_autostart,
+            commands::set_autostart,
         ])
         .setup(|app| {
             let cfg = config::load();

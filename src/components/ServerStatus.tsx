@@ -8,6 +8,8 @@ export default function ServerStatus() {
   const config = useAppStore((s) => s.config);
   const updateConfig = useAppStore((s) => s.updateConfig);
   const restartServer = useAppStore((s) => s.restartServer);
+  const autostart = useAppStore((s) => s.autostart);
+  const setAutostart = useAppStore((s) => s.setAutostart);
   const [port, setPort] = useState(config.port.toString());
 
   // Sync port input when config changes externally
@@ -89,6 +91,15 @@ export default function ServerStatus() {
           />
           {saving && <span className="text-xs text-app-muted">Restarting…</span>}
         </div>
+        <label className="ml-auto flex items-center gap-1.5 text-xs text-app-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autostart}
+            onChange={(e) => setAutostart(e.target.checked)}
+            className="accent-app-accent"
+          />
+          Launch at login
+        </label>
       </div>
     </div>
   );

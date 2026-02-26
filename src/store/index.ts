@@ -11,11 +11,13 @@ interface AppStore {
   serverError: string | null;
   loading: boolean;
   initError: string | null;
+  autostart: boolean;
 
   init: () => Promise<void>;
   refreshPrinters: () => Promise<void>;
   updateConfig: (config: AppConfig) => Promise<void>;
   restartServer: () => Promise<void>;
+  setAutostart: (enabled: boolean) => Promise<void>;
 }
 
 let listeners: UnlistenFn[] = [];
@@ -28,6 +30,7 @@ export const useAppStore = create<AppStore>((set) => ({
   serverError: null,
   loading: true,
   initError: null,
+  autostart: false,
 
   init: async () => {
     // Clean up previous listeners (HMR safety)
@@ -35,11 +38,12 @@ export const useAppStore = create<AppStore>((set) => ({
     listeners = [];
 
     try {
-      const [printers, loadedConfig, printJobs, serverRunning] = await Promise.all([
+      const [printers, loadedConfig, printJobs, serverRunning, autostart] = await Promise.all([
         invoke<Printer[]>('list_printers'),
         invoke<AppConfig>('get_config'),
         invoke<PrintJob[]>('get_print_jobs'),
         invoke<boolean>('get_server_running'),
+        invoke<boolean>('get_autostart'),
       ]);
 
       // Auto-select the system default printer if none is configured
@@ -50,7 +54,7 @@ export const useAppStore = create<AppStore>((set) => ({
         invoke('set_config', { newConfig: config }).catch(() => {});
       }
 
-      set({ printers, config, printJobs, serverRunning, loading: false });
+      set({ printers, config, printJobs, serverRunning, autostart, loading: false });
     } catch (e) {
       set({ loading: false, initError: String(e) });
     }
@@ -103,5 +107,10 @@ export const useAppStore = create<AppStore>((set) => ({
     } catch (e) {
       set({ serverError: String(e), serverRunning: false });
     }
+  },
+
+  setAutostart: async (enabled: boolean) => {
+    await invoke('set_autostart', { enabled });
+    set({ autostart: enabled });
   },
 }));
