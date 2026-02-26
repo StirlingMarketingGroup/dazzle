@@ -85,15 +85,16 @@ const buffer = await response.arrayBuffer();
 
 // Base64 encode the raw bytes
 const bytes = new Uint8Array(buffer);
-let binary = '';
-for (let i = 0; i < bytes.length; i++) {
-  binary += String.fromCharCode(bytes[i]);
+const CHUNK_SIZE = 0x8000;
+const chunks = [];
+for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+  chunks.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE)));
 }
 
 // Send to Dazzle with base64 encoding
 await fetch('http://localhost:29100/print?encoding=base64', {
   method: 'POST',
-  body: btoa(binary),
+  body: btoa(chunks.join('')),
 });
 ```
 

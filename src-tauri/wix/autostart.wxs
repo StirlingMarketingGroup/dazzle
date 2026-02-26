@@ -2,7 +2,7 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
     <ComponentGroup Id="AutoStartGroup" Directory="INSTALLDIR">
-      <Component Id="AutoStartRegistry" Guid="a1b2c3d4-e5f6-7890-abcd-ef1234567890" Win64="yes">
+      <Component Id="AutoStartRegistry" Guid="B6922356-A713-4133-8130-F4472A9CC4E1" Win64="yes">
         <RegistryValue
           Root="HKLM"
           Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
