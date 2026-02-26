@@ -26,6 +26,15 @@ pub async fn restart_server(state: &Arc<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+const BADGE_RADIUS_FRAC: f64 = 0.20;
+const BADGE_RADIUS_MIN: f64 = 3.0;
+const BORDER_WIDTH_FRAC: f64 = 0.04;
+const BORDER_WIDTH_MIN: f64 = 1.0;
+const BADGE_MARGIN_FRAC: f64 = 0.05;
+const COLOR_RUNNING: (u8, u8, u8) = (76, 175, 80);
+const COLOR_STOPPED: (u8, u8, u8) = (244, 67, 54);
+const COLOR_BORDER: (u8, u8, u8) = (255, 255, 255);
+
 /// Create a copy of the base icon with a colored status badge in the bottom-right corner.
 fn create_status_icon(
     base: &tauri::image::Image<'_>,
@@ -36,18 +45,14 @@ fn create_status_icon(
     let mut rgba = base.rgba().to_vec();
 
     let size = width.min(height) as f64;
-    let badge_r = (size * 0.20).max(3.0);
-    let border_w = (size * 0.04).max(1.0);
+    let badge_r = (size * BADGE_RADIUS_FRAC).max(BADGE_RADIUS_MIN);
+    let border_w = (size * BORDER_WIDTH_FRAC).max(BORDER_WIDTH_MIN);
     let total_r = badge_r + border_w;
-    let margin = size * 0.05;
+    let margin = size * BADGE_MARGIN_FRAC;
     let cx = width as f64 - total_r - margin;
     let cy = height as f64 - total_r - margin;
 
-    let (cr, cg, cb): (u8, u8, u8) = if running {
-        (76, 175, 80)
-    } else {
-        (244, 67, 54)
-    };
+    let fill = if running { COLOR_RUNNING } else { COLOR_STOPPED };
 
     for y in 0..height {
         for x in 0..width {
@@ -59,11 +64,7 @@ fn create_status_icon(
                 let idx = ((y * width + x) * 4) as usize;
                 let aa = (total_r + 0.5 - dist).clamp(0.0, 1.0);
 
-                let (r, g, b) = if dist <= badge_r {
-                    (cr, cg, cb)
-                } else {
-                    (255, 255, 255)
-                };
+                let (r, g, b) = if dist <= badge_r { fill } else { COLOR_BORDER };
 
                 // Alpha-composite badge over existing pixel
                 let src_a = aa;
@@ -71,15 +72,13 @@ fn create_status_icon(
                 let out_a = src_a + dst_a * (1.0 - src_a);
 
                 if out_a > 0.0 {
-                    rgba[idx] = ((r as f64 * src_a
-                        + rgba[idx] as f64 * dst_a * (1.0 - src_a))
-                        / out_a) as u8;
-                    rgba[idx + 1] = ((g as f64 * src_a
-                        + rgba[idx + 1] as f64 * dst_a * (1.0 - src_a))
-                        / out_a) as u8;
-                    rgba[idx + 2] = ((b as f64 * src_a
-                        + rgba[idx + 2] as f64 * dst_a * (1.0 - src_a))
-                        / out_a) as u8;
+                    let blend = |src_c: u8, dst_c: u8| {
+                        ((src_c as f64 * src_a + dst_c as f64 * dst_a * (1.0 - src_a)) / out_a)
+                            as u8
+                    };
+                    rgba[idx] = blend(r, rgba[idx]);
+                    rgba[idx + 1] = blend(g, rgba[idx + 1]);
+                    rgba[idx + 2] = blend(b, rgba[idx + 2]);
                     rgba[idx + 3] = (out_a * 255.0) as u8;
                 }
             }
@@ -230,6 +229,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = restart_server(&state).await {
                     log::error!("Failed to start server: {e}");
+                    state.app_handle.emit("server-status", false).ok();
                     state.app_handle.emit("server-error", &e).ok();
                 }
             });
