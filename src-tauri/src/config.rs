@@ -5,7 +5,6 @@ use std::path::PathBuf;
 pub struct AppConfig {
     pub port: u16,
     pub selected_printer: Option<String>,
-    pub auto_start: bool,
 }
 
 impl Default for AppConfig {
@@ -13,7 +12,6 @@ impl Default for AppConfig {
         Self {
             port: 29100,
             selected_printer: None,
-            auto_start: false,
         }
     }
 }
@@ -61,7 +59,6 @@ mod tests {
         let config = AppConfig::default();
         assert_eq!(config.port, 29100);
         assert!(config.selected_printer.is_none());
-        assert!(!config.auto_start);
     }
 
     #[test]
@@ -69,7 +66,6 @@ mod tests {
         let config = AppConfig {
             port: 8080,
             selected_printer: Some("Zebra ZD420".to_string()),
-            auto_start: true,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -80,12 +76,11 @@ mod tests {
             deserialized.selected_printer.as_deref(),
             Some("Zebra ZD420")
         );
-        assert!(deserialized.auto_start);
     }
 
     #[test]
     fn config_deserializes_with_null_printer() {
-        let json = r#"{"port":29100,"selected_printer":null,"auto_start":false}"#;
+        let json = r#"{"port":29100,"selected_printer":null}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.port, 29100);
         assert!(config.selected_printer.is_none());
@@ -100,7 +95,6 @@ mod tests {
         let config = AppConfig {
             port: 3000,
             selected_printer: Some("Test Printer".to_string()),
-            auto_start: true,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -111,7 +105,6 @@ mod tests {
 
         assert_eq!(loaded.port, 3000);
         assert_eq!(loaded.selected_printer.as_deref(), Some("Test Printer"));
-        assert!(loaded.auto_start);
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&dir);
@@ -125,8 +118,8 @@ mod tests {
 
     #[test]
     fn partial_json_with_missing_fields_fails() {
-        // Missing required fields should fail deserialization
-        let result = serde_json::from_str::<AppConfig>(r#"{"port":29100}"#);
+        // Missing required field (port) should fail deserialization
+        let result = serde_json::from_str::<AppConfig>(r#"{"selected_printer":null}"#);
         assert!(result.is_err());
     }
 
@@ -135,13 +128,11 @@ mod tests {
         let config = AppConfig {
             port: 29100,
             selected_printer: None,
-            auto_start: false,
         };
 
         let json: serde_json::Value = serde_json::to_value(&config).unwrap();
         assert_eq!(json["port"], 29100);
         assert!(json["selected_printer"].is_null());
-        assert_eq!(json["auto_start"], false);
     }
 
     #[test]
@@ -150,7 +141,6 @@ mod tests {
         let config = AppConfig {
             port: 1,
             selected_printer: None,
-            auto_start: false,
         };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AppConfig = serde_json::from_str(&json).unwrap();
@@ -160,7 +150,6 @@ mod tests {
         let config = AppConfig {
             port: 65535,
             selected_printer: None,
-            auto_start: false,
         };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AppConfig = serde_json::from_str(&json).unwrap();
@@ -172,7 +161,6 @@ mod tests {
         let config = AppConfig {
             port: 29100,
             selected_printer: Some("Druckerei-Schreibmaschine".to_string()),
-            auto_start: false,
         };
 
         let json = serde_json::to_string(&config).unwrap();

@@ -15,5 +15,4 @@ export interface PrintJob {
 export interface AppConfig {
   port: number;
   selected_printer: string | null;
-  auto_start: boolean;
 }

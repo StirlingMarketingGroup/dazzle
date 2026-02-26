@@ -17,7 +17,7 @@ describe('PrinterSelect', () => {
         { name: 'Zebra ZD420', is_default: true },
         { name: 'Brother QL-800', is_default: false },
       ],
-      config: { port: 29100, selected_printer: 'Zebra ZD420', auto_start: false },
+      config: { port: 29100, selected_printer: 'Zebra ZD420' },
     });
 
     render(<PrinterSelect />);
@@ -35,7 +35,7 @@ describe('PrinterSelect', () => {
         { name: 'Zebra ZD420', is_default: true },
         { name: 'Brother QL-800', is_default: false },
       ],
-      config: { port: 29100, selected_printer: 'Zebra ZD420', auto_start: false },
+      config: { port: 29100, selected_printer: 'Zebra ZD420' },
       updateConfig,
     });
 
@@ -45,7 +45,6 @@ describe('PrinterSelect', () => {
     expect(updateConfig).toHaveBeenCalledWith({
       port: 29100,
       selected_printer: 'Brother QL-800',
-      auto_start: false,
     });
   });
 
