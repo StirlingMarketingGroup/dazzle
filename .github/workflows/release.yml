@@ -151,36 +151,48 @@ jobs:
             arch: arm64
             rust-targets: aarch64-apple-darwin
             self_hosted: true
+            friendly_os: macOS
+            friendly_arch: Apple-Silicon
           # macOS Intel (cross-compile from arm64 runner)
           - os: [self-hosted, macOS, ARM64, medium]
             target: x86_64-apple-darwin
             arch: x86_64
             rust-targets: x86_64-apple-darwin
             self_hosted: true
+            friendly_os: macOS
+            friendly_arch: Intel
           # Linux x86_64 — self-hosted
           - os: [self-hosted, Linux, X64, medium]
             target: x86_64-unknown-linux-gnu
             arch: x86_64
             rust-targets: x86_64-unknown-linux-gnu
             self_hosted: true
+            friendly_os: Linux
+            friendly_arch: x64
           # Linux arm64 — GitHub-hosted (no self-hosted arm64 runner)
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: arm64
             rust-targets: aarch64-unknown-linux-gnu
             self_hosted: false
+            friendly_os: Linux
+            friendly_arch: ARM64
           # Windows x86_64 — GitHub-hosted
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x86_64
             rust-targets: x86_64-pc-windows-msvc
             self_hosted: false
+            friendly_os: Windows
+            friendly_arch: x64
           # Windows arm64 — GitHub-hosted
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             arch: arm64
             rust-targets: aarch64-pc-windows-msvc
             self_hosted: false
+            friendly_os: Windows
+            friendly_arch: ARM64
     permissions:
       contents: write
     env:
@@ -366,10 +378,16 @@ jobs:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: Dazzle ${{ env.RELEASE_TAG }}
           releaseBody: |
-            Automated binaries for Dazzle. Download the installer matching your platform.
+            Download the installer for your platform:
 
-            **macOS users**: Choose `arm64` for Apple Silicon (M1/M2/M3) or `x86_64` for Intel Macs.
-            **Windows users**: The `.msi` installer supports GPO deployment.
+            | Platform | Installer |
+            |----------|-----------|
+            | **macOS** (Apple Silicon — M1/M2/M3/M4) | `macOS_Apple-Silicon.dmg` |
+            | **macOS** (Intel) | `macOS_Intel.dmg` |
+            | **Windows** (64-bit) | `Windows_x64.msi` or `Windows_x64_Setup.exe` |
+            | **Windows** (ARM) | `Windows_ARM64.msi` or `Windows_ARM64_Setup.exe` |
+            | **Linux** (x64) | `Linux_x64.AppImage` |
+            | **Linux** (ARM64) | `Linux_ARM64.AppImage` or `Linux_ARM64.deb` |
           releaseDraft: false
           prerelease: ${{ startsWith(env.RELEASE_TAG, 'v0.') }}
           args: >-
@@ -390,9 +408,10 @@ jobs:
           set -euo pipefail
           TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
           APP_PATH="$TARGET_DIR/${{ matrix.target }}/release/bundle/macos/Dazzle.app"
-          ARCH="${{ matrix.arch }}"
           VERSION="${RELEASE_TAG#v}"
-          DMG_NAME="Dazzle_${VERSION}_${ARCH}.dmg"
+          FRIENDLY_OS="${{ matrix.friendly_os }}"
+          FRIENDLY_ARCH="${{ matrix.friendly_arch }}"
+          DMG_NAME="Dazzle_${VERSION}_${FRIENDLY_OS}_${FRIENDLY_ARCH}.dmg"
           DMG_DIR="$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg"
           DMG_PATH="$DMG_DIR/$DMG_NAME"
 
@@ -403,7 +422,7 @@ jobs:
           ln -s /Applications "$STAGING/Applications"
 
           for attempt in 1 2 3; do
-            hdiutil create -volname "Dazzle-${ARCH}" -srcfolder "$STAGING" -ov -format UDZO "$DMG_PATH" && break
+            hdiutil create -volname "Dazzle" -srcfolder "$STAGING" -ov -format UDZO "$DMG_PATH" && break
             echo "hdiutil attempt $attempt failed, retrying in 10s..."
             sleep 10
           done
@@ -428,9 +447,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TARGET_DIR="${CARGO_TARGET_DIR:-src-tauri/target}"
-          ARCH="${{ matrix.arch }}"
           VERSION="${RELEASE_TAG#v}"
-          DMG_NAME="Dazzle_${VERSION}_${ARCH}.dmg"
+          FRIENDLY_OS="${{ matrix.friendly_os }}"
+          FRIENDLY_ARCH="${{ matrix.friendly_arch }}"
+          DMG_NAME="Dazzle_${VERSION}_${FRIENDLY_OS}_${FRIENDLY_ARCH}.dmg"
           DMG_PATH="$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg/$DMG_NAME"
           gh release upload "${{ env.RELEASE_TAG }}" "$DMG_PATH" --clobber
 
@@ -442,6 +462,48 @@ jobs:
           ls -R ~/.cache/tauri | head -n 200 || true
           echo "Searching for linuxdeploy logs" >&2
           find ~/.cache/tauri -type f -name '*.log' -print -exec tail -n +1 {} + || true
+
+  rename-assets:
+    name: Rename Release Assets
+    needs: [sync-version, release]
+    if: ${{ needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.sync-version.outputs.release_tag }}
+    steps:
+      - name: Rename artifacts with friendly platform names
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+
+          gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" \
+            --jq '.assets[] | "\(.id)\t\(.name)"' | \
+          while IFS=$'\t' read -r id name; do
+            new_name=""
+            case "$name" in
+              # Windows NSIS installers
+              *_x64-setup.exe)       new_name="Dazzle_${VERSION}_Windows_x64_Setup.exe" ;;
+              *_arm64-setup.exe)     new_name="Dazzle_${VERSION}_Windows_ARM64_Setup.exe" ;;
+              # Windows MSI installers
+              *_x64_en-US.msi)       new_name="Dazzle_${VERSION}_Windows_x64.msi" ;;
+              *_arm64_en-US.msi)     new_name="Dazzle_${VERSION}_Windows_ARM64.msi" ;;
+              # Linux AppImages
+              *_amd64.AppImage)      new_name="Dazzle_${VERSION}_Linux_x64.AppImage" ;;
+              *_arm64.AppImage)      new_name="Dazzle_${VERSION}_Linux_ARM64.AppImage" ;;
+              # Linux .deb packages
+              *_amd64.deb)           new_name="Dazzle_${VERSION}_Linux_x64.deb" ;;
+              *_arm64.deb)           new_name="Dazzle_${VERSION}_Linux_ARM64.deb" ;;
+            esac
+
+            if [ -n "$new_name" ] && [ "$name" != "$new_name" ]; then
+              echo "Renaming: $name → $new_name"
+              gh api "repos/${{ github.repository }}/releases/assets/$id" \
+                -X PATCH -f name="$new_name" --silent
+            fi
+          done
 
   release-dry-run:
     name: Dry Run (${{ matrix.arch }}-${{ matrix.target }})

@@ -4,6 +4,8 @@
 
 A lightweight, open-source Tauri desktop app for printing ZPL directly to thermal label printers. Cross-platform (Mac, Windows, Linux) and free alternative to QZ Tray.
 
+![Dazzle screenshot](screenshots/image.png)
+
 ## Features
 
 - Printer discovery and selection
