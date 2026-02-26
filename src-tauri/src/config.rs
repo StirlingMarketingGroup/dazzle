@@ -157,6 +157,15 @@ mod tests {
     }
 
     #[test]
+    fn old_config_with_auto_start_field_still_loads() {
+        // Existing config files from before the auto_start removal should still deserialize
+        let json = r#"{"port":29100,"selected_printer":"Zebra ZD420","auto_start":true}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.port, 29100);
+        assert_eq!(config.selected_printer.as_deref(), Some("Zebra ZD420"));
+    }
+
+    #[test]
     fn config_with_unicode_printer_name() {
         let config = AppConfig {
             port: 29100,
