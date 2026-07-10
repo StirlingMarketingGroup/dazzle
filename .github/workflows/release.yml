@@ -530,8 +530,8 @@ jobs:
             arch: arm64
             rust-targets: aarch64-apple-darwin
             self_hosted: false
-          # macOS Intel — GitHub-hosted
-          - os: macos-15-intel
+          # macOS Intel (cross-compile from hosted Apple Silicon)
+          - os: macos-15
             target: x86_64-apple-darwin
             arch: x86_64
             rust-targets: x86_64-apple-darwin
