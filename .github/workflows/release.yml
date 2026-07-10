@@ -524,18 +524,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS Apple Silicon — self-hosted
-          - os: [self-hosted, macOS, ARM64, medium]
+          # macOS Apple Silicon — GitHub-hosted
+          - os: macos-15
             target: aarch64-apple-darwin
             arch: arm64
             rust-targets: aarch64-apple-darwin
-            self_hosted: true
-          # macOS Intel (cross-compile from arm64 runner)
-          - os: [self-hosted, macOS, ARM64, medium]
+            self_hosted: false
+          # macOS Intel — GitHub-hosted
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             arch: x86_64
             rust-targets: x86_64-apple-darwin
-            self_hosted: true
+            self_hosted: false
           # Linux x86_64 — self-hosted
           - os: [self-hosted, Linux, X64, medium]
             target: x86_64-unknown-linux-gnu
