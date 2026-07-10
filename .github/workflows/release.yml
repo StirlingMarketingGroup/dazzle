@@ -303,6 +303,7 @@ jobs:
             src-tauri -> target
           shared-key: release-${{ matrix.target }}
           cache-all-crates: true
+          cache-workspace-crates: true
           cache-on-failure: true
 
       # Tauri download caching for GitHub-hosted runners
@@ -655,6 +656,7 @@ jobs:
             src-tauri -> target
           shared-key: release-${{ matrix.target }}
           cache-all-crates: true
+          cache-workspace-crates: true
           cache-on-failure: true
 
       - name: Prepare Tauri cache directory (Linux)
