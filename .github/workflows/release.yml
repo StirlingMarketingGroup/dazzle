@@ -517,9 +517,26 @@ jobs:
             fi
           done
 
+  detect-bundle-changes:
+    name: Detect Bundle Changes
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    outputs:
+      bundle: ${{ steps.changes.outputs.bundle }}
+    steps:
+      - name: Detect native or release changes
+        id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            bundle:
+              - 'src-tauri/**'
+              - '.github/workflows/release.yml'
+
   release-dry-run:
     name: Dry Run (${{ matrix.arch }}-${{ matrix.target }})
-    if: ${{ github.event_name == 'pull_request' }}
+    needs: detect-bundle-changes
+    if: ${{ github.event_name == 'pull_request' && needs.detect-bundle-changes.outputs.bundle == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

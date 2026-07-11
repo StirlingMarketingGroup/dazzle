@@ -59,4 +59,7 @@ jobs:
 
       - name: Run checks
         if: steps.changes.outputs.check == 'true'
-        run: npm run check
+        run: |
+          npm run check
+          npm run test:run
+          npm run build
