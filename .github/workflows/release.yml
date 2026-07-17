@@ -80,7 +80,7 @@ jobs:
           ref: ${{ steps.context.outputs.default_branch }}
           token: ${{ steps.smg-actions.outputs.token }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
 
@@ -281,7 +281,7 @@ jobs:
           )
           PY
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: ${{ !matrix.self_hosted }}
         with:
           node-version: 20
@@ -651,7 +651,7 @@ jobs:
           )
           PY
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: ${{ !matrix.self_hosted }}
         with:
           node-version: 20
@@ -752,7 +752,7 @@ jobs:
         with:
           ref: ${{ needs.sync-version.outputs.release_ref }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
