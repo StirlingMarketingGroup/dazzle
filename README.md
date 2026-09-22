@@ -170,7 +170,7 @@ const printers = await res.json();
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) 22.22.2+, 24.15.0+, or 26+
 - [Rust](https://www.rust-lang.org/tools/install) 1.77+
 - Platform-specific Tauri dependencies ([see docs](https://v2.tauri.app/start/prerequisites/))
 
