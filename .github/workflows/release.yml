@@ -82,7 +82,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Update npm metadata
         shell: bash
@@ -282,9 +282,8 @@ jobs:
           PY
 
       - uses: actions/setup-node@v7
-        if: ${{ !matrix.self_hosted }}
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           cache-dependency-path: ${{ !matrix.self_hosted && 'package-lock.ci.json' || '' }}
 
@@ -652,9 +651,8 @@ jobs:
           PY
 
       - uses: actions/setup-node@v7
-        if: ${{ !matrix.self_hosted }}
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           cache-dependency-path: ${{ !matrix.self_hosted && 'package-lock.ci.json' || '' }}
 
@@ -754,7 +752,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Upgrade npm for Trusted Publishing (OIDC)
