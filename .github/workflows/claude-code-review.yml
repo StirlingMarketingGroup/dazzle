@@ -6,7 +6,7 @@ on:
 
 jobs:
   claude-review:
-    runs-on: self-hosted
+    runs-on: [self-hosted, speed-slow]
     permissions:
       contents: read
       pull-requests: read
