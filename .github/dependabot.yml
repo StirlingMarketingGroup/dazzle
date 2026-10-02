@@ -1,6 +1,20 @@
 version: 2
+
+# Tauri requires matching major/minor versions across its npm and Cargo packages.
+multi-ecosystem-groups:
+  tauri:
+    schedule:
+      interval: 'weekly'
+    commit-message:
+      prefix: 'chore(deps)'
+      include: 'scope'
+    labels:
+      - 'dependencies'
+      - 'npm'
+      - 'cargo'
+
 updates:
-  # NPM (frontend + Tauri CLI/plugins)
+  # NPM (Tauri packages are handled by the cross-ecosystem group below)
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
@@ -15,10 +29,23 @@ updates:
     labels:
       - 'dependencies'
       - 'npm'
+    ignore:
+      - dependency-name: '@tauri-apps/*'
+      # typescript-eslint currently supports TypeScript <6.1.
+      - dependency-name: 'typescript'
+        versions: ['>=6.1.0']
+      # eslint-plugin-react currently supports ESLint through v9.
+      - dependency-name: 'eslint'
+        versions: ['>=10.0.0']
+      - dependency-name: '@eslint/js'
+        versions: ['>=10.0.0']
     groups:
       dev-dependencies:
         applies-to: 'version-updates'
         dependency-type: 'development'
+        update-types:
+          - 'minor'
+          - 'patch'
         patterns:
           - '*'
       minor-and-patch:
@@ -29,7 +56,7 @@ updates:
         patterns:
           - '*'
 
-  # Cargo (Rust, Tauri backend)
+  # Cargo (Tauri packages are handled by the cross-ecosystem group below)
   - package-ecosystem: 'cargo'
     directory: '/src-tauri'
     schedule:
@@ -43,6 +70,8 @@ updates:
     labels:
       - 'dependencies'
       - 'cargo'
+    ignore:
+      - dependency-name: 'tauri*'
     groups:
       minor-and-patch:
         applies-to: 'version-updates'
@@ -51,6 +80,27 @@ updates:
           - 'patch'
         patterns:
           - '*'
+
+  # Separate entries allow unrelated npm/Cargo updates to retain their own PRs.
+  - package-ecosystem: 'npm'
+    directory: '/'
+    patterns:
+      - '@tauri-apps/*'
+    multi-ecosystem-group: 'tauri'
+    versioning-strategy: 'increase-if-necessary'
+    ignore:
+      - dependency-name: '@tauri-apps/*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: 'cargo'
+    directory: '/src-tauri'
+    patterns:
+      - 'tauri*'
+    multi-ecosystem-group: 'tauri'
+    versioning-strategy: 'auto'
+    ignore:
+      - dependency-name: 'tauri*'
+        update-types: ['version-update:semver-major']
 
   # GitHub Actions
   - package-ecosystem: 'github-actions'
