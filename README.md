@@ -168,6 +168,20 @@ const printers = await res.json();
 
 ## Development
 
+### Dependency updates
+
+Dependabot groups routine minor and patch updates separately from major upgrades.
+TypeScript 6.1+ and ESLint 10+ are excluded while the current lint plugins do not
+support them. Revisit the explicit version exclusions in `.github/dependabot.yml`
+when typescript-eslint and eslint-plugin-react add support.
+
+Tauri's npm packages and Rust crates update together in a weekly `tauri`
+cross-ecosystem PR because the CLI requires matching major/minor versions for
+`@tauri-apps/api` and each frontend plugin's Rust counterpart. Their patch versions
+can differ. Tauri major upgrades require a coordinated migration and are excluded
+from these automatic updates. Other npm and Cargo packages keep their existing
+weekly update groups.
+
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 22.22.2+, 24.15.0+, or 26+
