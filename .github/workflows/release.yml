@@ -145,54 +145,54 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS Apple Silicon — self-hosted
-          - os: [self-hosted, macOS, ARM64, medium]
+          # macOS Apple Silicon — GitHub-hosted
+          - os: macos-15
             target: aarch64-apple-darwin
             arch: arm64
             rust-targets: aarch64-apple-darwin
-            self_hosted: true
-            friendly_os: macOS
-            friendly_arch: Apple-Silicon
-          # macOS Intel (cross-compile from arm64 runner)
-          - os: [self-hosted, macOS, ARM64, medium]
+            self_hosted: false
+            friendly_os: macos
+            friendly_arch: arm64
+          # macOS Intel (cross-compile from hosted Apple Silicon)
+          - os: macos-15
             target: x86_64-apple-darwin
             arch: x86_64
             rust-targets: x86_64-apple-darwin
-            self_hosted: true
-            friendly_os: macOS
-            friendly_arch: Intel
+            self_hosted: false
+            friendly_os: macos
+            friendly_arch: amd64
           # Linux x86_64 — self-hosted
           - os: [self-hosted, Linux, X64, medium]
             target: x86_64-unknown-linux-gnu
             arch: x86_64
             rust-targets: x86_64-unknown-linux-gnu
             self_hosted: true
-            friendly_os: Linux
-            friendly_arch: x64
+            friendly_os: linux
+            friendly_arch: amd64
           # Linux arm64 — GitHub-hosted (no self-hosted arm64 runner)
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: arm64
             rust-targets: aarch64-unknown-linux-gnu
             self_hosted: false
-            friendly_os: Linux
-            friendly_arch: ARM64
+            friendly_os: linux
+            friendly_arch: arm64
           # Windows x86_64 — GitHub-hosted
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x86_64
             rust-targets: x86_64-pc-windows-msvc
             self_hosted: false
-            friendly_os: Windows
-            friendly_arch: x64
+            friendly_os: windows
+            friendly_arch: amd64
           # Windows arm64 — GitHub-hosted
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             arch: arm64
             rust-targets: aarch64-pc-windows-msvc
             self_hosted: false
-            friendly_os: Windows
-            friendly_arch: ARM64
+            friendly_os: windows
+            friendly_arch: arm64
     permissions:
       contents: write
     env:
@@ -393,14 +393,15 @@ jobs:
 
             | Platform | Installer |
             |----------|-----------|
-            | **macOS** (Apple Silicon — M1/M2/M3/M4) | `…macOS_Apple-Silicon.dmg` |
-            | **macOS** (Intel) | `…macOS_Intel.dmg` |
-            | **Windows** (64-bit) | `…Windows_x64.msi` or `…Windows_x64_Setup.exe` |
-            | **Windows** (ARM) | `…Windows_ARM64.msi` or `…Windows_ARM64_Setup.exe` |
-            | **Linux** (x64) | `…Linux_x64.AppImage` |
-            | **Linux** (ARM64) | `…Linux_ARM64.AppImage` or `…Linux_ARM64.deb` |
+            | **macOS** (Apple Silicon — M1/M2/M3/M4) | `…_macos_arm64.dmg` |
+            | **macOS** (Intel) | `…_macos_amd64.dmg` |
+            | **Windows** (64-bit) | `…_windows_amd64.msi` or `…_windows_amd64_setup.exe` |
+            | **Windows** (ARM) | `…_windows_arm64.msi` or `…_windows_arm64_setup.exe` |
+            | **Linux** (x64) | `…_linux_amd64.AppImage` / `.deb` / `.rpm` |
+            | **Linux** (ARM64) | `…_linux_arm64.deb` |
           releaseDraft: false
           prerelease: ${{ startsWith(env.RELEASE_TAG, 'v0.') }}
+          releaseAssetNamePattern: 'dazzle_[version]_${{ matrix.friendly_os }}_${{ matrix.friendly_arch }}[_setup][ext]'
           args: >-
             --target ${{ matrix.target }}
             --verbose
@@ -422,7 +423,7 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           FRIENDLY_OS="${{ matrix.friendly_os }}"
           FRIENDLY_ARCH="${{ matrix.friendly_arch }}"
-          DMG_NAME="Dazzle_${VERSION}_${FRIENDLY_OS}_${FRIENDLY_ARCH}.dmg"
+          DMG_NAME="dazzle_${VERSION}_${FRIENDLY_OS}_${FRIENDLY_ARCH}.dmg"
           DMG_DIR="$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg"
           DMG_PATH="$DMG_DIR/$DMG_NAME"
 
@@ -461,7 +462,7 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           FRIENDLY_OS="${{ matrix.friendly_os }}"
           FRIENDLY_ARCH="${{ matrix.friendly_arch }}"
-          DMG_NAME="Dazzle_${VERSION}_${FRIENDLY_OS}_${FRIENDLY_ARCH}.dmg"
+          DMG_NAME="dazzle_${VERSION}_${FRIENDLY_OS}_${FRIENDLY_ARCH}.dmg"
           DMG_PATH="$TARGET_DIR/${{ matrix.target }}/release/bundle/dmg/$DMG_NAME"
           gh release upload "${{ env.RELEASE_TAG }}" "$DMG_PATH" --clobber
 
@@ -473,48 +474,6 @@ jobs:
           ls -R ~/.cache/tauri | head -n 200 || true
           echo "Searching for linuxdeploy logs" >&2
           find ~/.cache/tauri -type f -name '*.log' -print -exec tail -n +1 {} + || true
-
-  rename-assets:
-    name: Rename Release Assets
-    needs: [sync-version, release]
-    if: ${{ needs.release.result == 'success' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      RELEASE_TAG: ${{ needs.sync-version.outputs.release_tag }}
-    steps:
-      - name: Rename artifacts with friendly platform names
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${RELEASE_TAG#v}"
-
-          gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" \
-            --jq '.assets[] | "\(.id)\t\(.name)"' | \
-          while IFS=$'\t' read -r id name; do
-            new_name=""
-            case "$name" in
-              # Windows NSIS installers
-              *_x64-setup.exe)       new_name="Dazzle_${VERSION}_Windows_x64_Setup.exe" ;;
-              *_arm64-setup.exe)     new_name="Dazzle_${VERSION}_Windows_ARM64_Setup.exe" ;;
-              # Windows MSI installers
-              *_x64_en-US.msi)       new_name="Dazzle_${VERSION}_Windows_x64.msi" ;;
-              *_arm64_en-US.msi)     new_name="Dazzle_${VERSION}_Windows_ARM64.msi" ;;
-              # Linux AppImages
-              *_amd64.AppImage)      new_name="Dazzle_${VERSION}_Linux_x64.AppImage" ;;
-              *_arm64.AppImage)      new_name="Dazzle_${VERSION}_Linux_ARM64.AppImage" ;;
-              # Linux .deb packages
-              *_amd64.deb)           new_name="Dazzle_${VERSION}_Linux_x64.deb" ;;
-              *_arm64.deb)           new_name="Dazzle_${VERSION}_Linux_ARM64.deb" ;;
-            esac
-
-            if [ -n "$new_name" ] && [ "$name" != "$new_name" ]; then
-              echo "Renaming: $name → $new_name"
-              gh api "repos/${{ github.repository }}/releases/assets/$id" \
-                -X PATCH -f name="$new_name" --silent || echo "  Warning: rename failed (may already exist), continuing"
-            fi
-          done
 
   detect-bundle-changes:
     name: Detect Bundle Changes
