@@ -400,7 +400,7 @@ jobs:
             | **Linux** (x64) | `…_linux_amd64.AppImage` / `.deb` / `.rpm` |
             | **Linux** (ARM64) | `…_linux_arm64.deb` |
           releaseDraft: false
-          prerelease: ${{ startsWith(env.RELEASE_TAG, 'v0.') }}
+          prerelease: false
           releaseAssetNamePattern: 'dazzle_[version]_${{ matrix.friendly_os }}_${{ matrix.friendly_arch }}[_setup][ext]'
           args: >-
             --target ${{ matrix.target }}
