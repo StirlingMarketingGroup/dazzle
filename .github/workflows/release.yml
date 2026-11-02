@@ -284,7 +284,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: 'npm'
+          cache: ${{ !matrix.self_hosted && 'npm' || '' }}
           cache-dependency-path: ${{ !matrix.self_hosted && 'package-lock.ci.json' || '' }}
 
       - name: Install Rust toolchain
@@ -612,7 +612,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: 'npm'
+          cache: ${{ !matrix.self_hosted && 'npm' || '' }}
           cache-dependency-path: ${{ !matrix.self_hosted && 'package-lock.ci.json' || '' }}
 
       - name: Install Rust toolchain
