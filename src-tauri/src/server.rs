@@ -33,6 +33,22 @@ pub enum JobStatus {
     Failed,
 }
 
+/// Who answers print jobs on this PC's port. Loopback ports are shared by every
+/// signed-in user, so only one Dazzle on the PC can serve.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum ServerStatus {
+    Starting,
+    /// This Dazzle owns the port.
+    Serving,
+    /// Another signed-in user's Dazzle owns the port. This one keeps trying and takes over when that one exits.
+    Standby,
+    /// No Dazzle serves print jobs on this port.
+    Failed {
+        error: String,
+    },
+}
+
 #[derive(Deserialize)]
 struct PrintQuery {
     printer: Option<String>,
@@ -44,7 +60,7 @@ struct PrintResponse {
     job_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct StatusResponse {
     status: String,
     version: String,
@@ -86,6 +102,7 @@ async fn print_handler(
 
     let printer = query
         .printer
+        .or_else(crate::policy::printer)
         .or_else(|| {
             state
                 .config
@@ -162,10 +179,11 @@ async fn printers_handler() -> Result<Json<Vec<printing::Printer>>, (StatusCode,
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-async fn status_handler() -> Json<StatusResponse> {
+async fn status_handler(State(state): State<Arc<crate::AppState>>) -> Json<StatusResponse> {
     Json(StatusResponse {
         status: "running".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        // The release version lives in tauri.conf.json; Cargo.toml's is never bumped.
+        version: state.app_handle.package_info().version.to_string(),
     })
 }
 
@@ -175,10 +193,6 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
-    pub fn is_finished(&self) -> bool {
-        self.task.is_finished()
-    }
-
     /// Gracefully shut down the server and wait for it to stop.
     pub async fn shutdown(self) {
         self.cancel.cancel();
@@ -187,10 +201,13 @@ impl ServerHandle {
     }
 }
 
-/// Bind the port and start the Axum server. Returns a handle that supports
-/// graceful shutdown. Fails immediately if the port can't be bound.
-pub async fn start(state: Arc<crate::AppState>) -> Result<ServerHandle, String> {
-    let port = state.config.read().map_err(|e| e.to_string())?.port;
+const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Start the print server. It serves when it can bind the port, and otherwise
+/// retries every RETRY_INTERVAL, so a standby Dazzle takes the port over when
+/// the serving one exits.
+pub fn start(state: Arc<crate::AppState>) -> ServerHandle {
+    crate::set_server_status(&state, ServerStatus::Starting);
 
     let router = Router::new()
         .route("/print", post(print_handler))
@@ -200,26 +217,205 @@ pub async fn start(state: Arc<crate::AppState>) -> Result<ServerHandle, String> 
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
 
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
-        .await
-        .map_err(|e| format!("Failed to bind port {port}: {e}"))?;
-
-    log::info!("HTTP server listening on 127.0.0.1:{port}");
-    state.app_handle.emit("server-status", true).ok();
-
     let cancel = CancellationToken::new();
-    let cancel_clone = cancel.clone();
+    let cancel_task = cancel.clone();
 
     let task = tokio::spawn(async move {
-        let shutdown = async move { cancel_clone.cancelled().await };
-        if let Err(e) = axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown)
-            .await
-        {
-            log::error!("Server error: {e}");
+        loop {
+            let port = state
+                .config
+                .read()
+                .unwrap_or_else(|err| err.into_inner())
+                .port;
+
+            match TcpListener::bind(("127.0.0.1", port)).await {
+                Ok(listener) => {
+                    log::info!("HTTP server listening on 127.0.0.1:{port}");
+                    crate::set_server_status(&state, ServerStatus::Serving);
+                    let shutdown = cancel_task.clone();
+                    if let Err(e) = axum::serve(listener, router.clone())
+                        .with_graceful_shutdown(async move { shutdown.cancelled().await })
+                        .await
+                    {
+                        log::error!("Server error: {e}");
+                    }
+                }
+                Err(e) => {
+                    tokio::select! {
+                        _ = cancel_task.cancelled() => return,
+                        status = bind_failure_status(port, &e) => {
+                            crate::set_server_status(&state, status);
+                        }
+                    }
+                }
+            }
+
+            tokio::select! {
+                _ = cancel_task.cancelled() => return,
+                _ = tokio::time::sleep(RETRY_INTERVAL) => {}
+            }
         }
-        state.app_handle.emit("server-status", false).ok();
     });
 
-    Ok(ServerHandle { task, cancel })
+    ServerHandle { task, cancel }
+}
+
+/// What a failed bind means: another Dazzle on this PC is serving, or nothing is.
+async fn bind_failure_status(port: u16, error: &std::io::Error) -> ServerStatus {
+    if another_dazzle_answers(port).await {
+        ServerStatus::Standby
+    } else if error.kind() == std::io::ErrorKind::AddrInUse {
+        ServerStatus::Failed {
+            error: format!("Port {port} is in use by another program"),
+        }
+    } else {
+        ServerStatus::Failed {
+            error: format!("Failed to bind port {port}: {error}"),
+        }
+    }
+}
+
+/// Whether the program on this port is a Dazzle (it answers GET /status the way status_handler does).
+async fn another_dazzle_answers(port: u16) -> bool {
+    let exchange = async {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .ok()?;
+        stream
+            .write_all(b"GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            .await
+            .ok()?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.ok()?;
+
+        let (_, body) = response.split_once("\r\n\r\n")?;
+        let status: StatusResponse = serde_json::from_str(body).ok()?;
+        Some(status.status == "running")
+    };
+
+    matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(2), exchange).await,
+        Ok(Some(true))
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn dazzle_status() -> Json<StatusResponse> {
+        Json(StatusResponse {
+            status: "running".to_string(),
+            version: "0.0.0".to_string(),
+        })
+    }
+
+    async fn free_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        port
+    }
+
+    #[tokio::test]
+    async fn another_dazzle_answers_when_status_is_served() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let app = Router::new().route("/status", get(dazzle_status));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        assert!(another_dazzle_answers(port).await);
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn another_dazzle_answers_false_when_listener_never_replies() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        assert!(!another_dazzle_answers(port).await);
+
+        drop(listener);
+    }
+
+    #[tokio::test]
+    async fn another_dazzle_answers_false_when_nothing_listens() {
+        let port = free_port().await;
+        assert!(!another_dazzle_answers(port).await);
+    }
+
+    #[tokio::test]
+    async fn bind_failure_is_standby_when_a_dazzle_answers() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let app = Router::new().route("/status", get(dazzle_status));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let error = std::io::Error::new(std::io::ErrorKind::AddrInUse, "in use");
+        assert_eq!(
+            bind_failure_status(port, &error).await,
+            ServerStatus::Standby
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn bind_failure_is_in_use_when_a_non_dazzle_holds_the_port() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let error = std::io::Error::new(std::io::ErrorKind::AddrInUse, "in use");
+
+        assert_eq!(
+            bind_failure_status(port, &error).await,
+            ServerStatus::Failed {
+                error: format!("Port {port} is in use by another program"),
+            }
+        );
+
+        drop(listener);
+    }
+
+    #[tokio::test]
+    async fn bind_failure_reports_other_errors() {
+        let port = free_port().await;
+        let error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+
+        assert_eq!(
+            bind_failure_status(port, &error).await,
+            ServerStatus::Failed {
+                error: format!("Failed to bind port {port}: denied"),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn server_status_serializes_to_the_four_shapes() {
+        assert_eq!(
+            serde_json::to_value(ServerStatus::Starting).unwrap(),
+            serde_json::json!({"state": "starting"})
+        );
+        assert_eq!(
+            serde_json::to_value(ServerStatus::Serving).unwrap(),
+            serde_json::json!({"state": "serving"})
+        );
+        assert_eq!(
+            serde_json::to_value(ServerStatus::Standby).unwrap(),
+            serde_json::json!({"state": "standby"})
+        );
+        assert_eq!(
+            serde_json::to_value(ServerStatus::Failed {
+                error: "Port 29100 is in use by another program".to_string(),
+            })
+            .unwrap(),
+            serde_json::json!({"state": "failed", "error": "Port 29100 is in use by another program"})
+        );
+    }
 }

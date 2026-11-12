@@ -1,20 +1,20 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Printer, PrintJob, AppConfig } from '@/types';
+import type { Printer, PrintJob, AppConfig, ServerStatus, Autostart } from '@/types';
 
 interface AppStore {
   printers: Printer[];
   config: AppConfig;
   printJobs: PrintJob[];
-  serverRunning: boolean;
-  serverError: string | null;
+  serverStatus: ServerStatus;
   loading: boolean;
   initError: string | null;
-  autostart: boolean;
+  autostart: Autostart;
+  policyPrinter: string | null;
 
   init: () => Promise<void>;
-  refreshPrinters: () => Promise<void>;
+  refresh: () => Promise<void>;
   updateConfig: (config: AppConfig) => Promise<void>;
   restartServer: () => Promise<void>;
   setAutostart: (enabled: boolean) => Promise<void>;
@@ -26,39 +26,19 @@ export const useAppStore = create<AppStore>((set) => ({
   printers: [],
   config: { port: 29100, selected_printer: null },
   printJobs: [],
-  serverRunning: false,
-  serverError: null,
+  serverStatus: { state: 'starting' },
   loading: true,
   initError: null,
-  autostart: false,
+  autostart: 'off',
+  policyPrinter: null,
 
   init: async () => {
     // Clean up previous listeners (HMR safety)
     for (const unlisten of listeners) unlisten();
     listeners = [];
 
-    try {
-      const [printers, loadedConfig, printJobs, serverRunning, autostart] = await Promise.all([
-        invoke<Printer[]>('list_printers'),
-        invoke<AppConfig>('get_config'),
-        invoke<PrintJob[]>('get_print_jobs'),
-        invoke<boolean>('get_server_running'),
-        invoke<boolean>('get_autostart'),
-      ]);
-
-      // Auto-select the system default printer if none is configured
-      let config = loadedConfig;
-      if (!config.selected_printer && printers.length > 0) {
-        const defaultPrinter = printers.find((p) => p.is_default) ?? printers[0];
-        config = { ...config, selected_printer: defaultPrinter.name };
-        invoke('set_config', { newConfig: config }).catch(() => {});
-      }
-
-      set({ printers, config, printJobs, serverRunning, autostart, loading: false });
-    } catch (e) {
-      set({ loading: false, initError: String(e) });
-    }
-
+    // Register before the snapshot. The backend emits a status only when it
+    // changes, so a change between the snapshot and a later listener would never show.
     listeners.push(
       await listen<PrintJob>('print-job', (event) => {
         set((state) => {
@@ -75,24 +55,52 @@ export const useAppStore = create<AppStore>((set) => ({
     );
 
     listeners.push(
-      await listen<boolean>('server-status', (event) => {
-        set({
-          serverRunning: event.payload,
-          ...(event.payload ? { serverError: null } : {}),
-        });
+      await listen<ServerStatus>('server-status', (event) => {
+        set({ serverStatus: event.payload });
       })
     );
 
-    listeners.push(
-      await listen<string>('server-error', (event) => {
-        set({ serverError: event.payload, serverRunning: false });
-      })
-    );
+    try {
+      const [printers, loadedConfig, printJobs, serverStatus, autostart, policyPrinter] =
+        await Promise.all([
+          invoke<Printer[]>('list_printers'),
+          invoke<AppConfig>('get_config'),
+          invoke<PrintJob[]>('get_print_jobs'),
+          invoke<ServerStatus>('get_server_status'),
+          invoke<Autostart>('get_autostart'),
+          invoke<string | null>('get_policy_printer'),
+        ]);
+
+      // Auto-select the system default printer if none is configured
+      let config = loadedConfig;
+      if (!config.selected_printer && printers.length > 0) {
+        const defaultPrinter = printers.find((p) => p.is_default) ?? printers[0];
+        config = { ...config, selected_printer: defaultPrinter.name };
+        invoke('set_config', { newConfig: config }).catch(() => {});
+      }
+
+      set({
+        printers,
+        config,
+        printJobs,
+        serverStatus,
+        autostart,
+        policyPrinter,
+        loading: false,
+      });
+    } catch (e) {
+      set({ loading: false, initError: String(e) });
+    }
   },
 
-  refreshPrinters: async () => {
-    const printers = await invoke<Printer[]>('list_printers');
-    set({ printers });
+  // Re-reads what changes outside Dazzle: the printers Windows has, and the administrator's settings.
+  refresh: async () => {
+    const [printers, policyPrinter, autostart] = await Promise.all([
+      invoke<Printer[]>('list_printers'),
+      invoke<string | null>('get_policy_printer'),
+      invoke<Autostart>('get_autostart'),
+    ]);
+    set({ printers, policyPrinter, autostart });
   },
 
   updateConfig: async (config: AppConfig) => {
@@ -101,16 +109,11 @@ export const useAppStore = create<AppStore>((set) => ({
   },
 
   restartServer: async () => {
-    set({ serverError: null });
-    try {
-      await invoke('restart_server');
-    } catch (e) {
-      set({ serverError: String(e), serverRunning: false });
-    }
+    await invoke('restart_server');
   },
 
   setAutostart: async (enabled: boolean) => {
     await invoke('set_autostart', { enabled });
-    set({ autostart: enabled });
+    set({ autostart: await invoke<Autostart>('get_autostart') });
   },
 }));

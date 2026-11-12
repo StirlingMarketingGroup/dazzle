@@ -12,11 +12,11 @@ function resetStore() {
     printers: [],
     config: { port: 29100, selected_printer: null },
     printJobs: [],
-    serverRunning: false,
-    serverError: null,
+    serverStatus: { state: 'starting' },
     loading: true,
     initError: null,
-    autostart: false,
+    autostart: 'off',
+    policyPrinter: null,
   });
 }
 
@@ -35,8 +35,9 @@ describe('useAppStore', () => {
         selected_printer: null,
       });
       expect(state.printJobs).toEqual([]);
-      expect(state.serverRunning).toBe(false);
-      expect(state.serverError).toBeNull();
+      expect(state.serverStatus).toEqual({ state: 'starting' });
+      expect(state.autostart).toBe('off');
+      expect(state.policyPrinter).toBeNull();
       expect(state.loading).toBe(true);
       expect(state.initError).toBeNull();
     });
@@ -68,8 +69,9 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce(printers) // list_printers
         .mockResolvedValueOnce(config) // get_config
         .mockResolvedValueOnce(printJobs) // get_print_jobs
-        .mockResolvedValueOnce(true) // get_server_running
-        .mockResolvedValueOnce(true); // get_autostart
+        .mockResolvedValueOnce({ state: 'serving' }) // get_server_status
+        .mockResolvedValueOnce('user') // get_autostart
+        .mockResolvedValueOnce('Zebra ZD420'); // get_policy_printer
       mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
@@ -80,8 +82,11 @@ describe('useAppStore', () => {
       expect(state.printers).toEqual(printers);
       expect(state.config).toEqual(config);
       expect(state.printJobs).toEqual(printJobs);
-      expect(state.serverRunning).toBe(true);
-      expect(state.autostart).toBe(true);
+      expect(state.serverStatus).toEqual({ state: 'serving' });
+      expect(state.autostart).toBe('user');
+      expect(state.policyPrinter).toBe('Zebra ZD420');
+      expect(mockInvoke).toHaveBeenCalledWith('get_server_status');
+      expect(mockInvoke).toHaveBeenCalledWith('get_policy_printer');
     });
 
     it('auto-selects default printer when none configured', async () => {
@@ -94,8 +99,9 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce(printers) // list_printers
         .mockResolvedValueOnce(noSelectionConfig) // get_config
         .mockResolvedValueOnce([]) // get_print_jobs
-        .mockResolvedValueOnce(false) // get_server_running
-        .mockResolvedValueOnce(false) // get_autostart
+        .mockResolvedValueOnce({ state: 'starting' }) // get_server_status
+        .mockResolvedValueOnce('off') // get_autostart
+        .mockResolvedValueOnce(null) // get_policy_printer
         .mockResolvedValue(undefined); // set_config (fire-and-forget)
       mockListen.mockResolvedValue(() => {});
 
@@ -115,8 +121,9 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce(printersNoDefault)
         .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false) // get_autostart
+        .mockResolvedValueOnce({ state: 'starting' })
+        .mockResolvedValueOnce('off')
+        .mockResolvedValueOnce(null)
         .mockResolvedValue(undefined);
       mockListen.mockResolvedValue(() => {});
 
@@ -136,13 +143,14 @@ describe('useAppStore', () => {
       expect(state.initError).toContain('backend down');
     });
 
-    it('registers event listeners for print-job, server-status, server-error', async () => {
+    it('registers event listeners before loading the snapshot', async () => {
       mockInvoke
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false); // get_autostart
+        .mockResolvedValueOnce({ state: 'starting' })
+        .mockResolvedValueOnce('off')
+        .mockResolvedValueOnce(null);
       mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
@@ -150,19 +158,52 @@ describe('useAppStore', () => {
       const listenedEvents = mockListen.mock.calls.map((call) => call[0]);
       expect(listenedEvents).toContain('print-job');
       expect(listenedEvents).toContain('server-status');
-      expect(listenedEvents).toContain('server-error');
+      expect(mockListen.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInvoke.mock.invocationCallOrder[0]
+      );
+    });
+
+    it('stores server-status payloads', async () => {
+      mockInvoke
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ port: 29100, selected_printer: null })
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ state: 'starting' })
+        .mockResolvedValueOnce('off')
+        .mockResolvedValueOnce(null);
+
+      let statusHandler: ((event: { payload: { state: 'standby' } }) => void) | undefined;
+      mockListen.mockImplementation(async (event: string, handler: unknown) => {
+        if (event === 'server-status') {
+          statusHandler = handler as (event: { payload: { state: 'standby' } }) => void;
+        }
+        return () => {};
+      });
+
+      await useAppStore.getState().init();
+
+      statusHandler!({ payload: { state: 'standby' } });
+
+      expect(useAppStore.getState().serverStatus).toEqual({ state: 'standby' });
     });
   });
 
-  describe('refreshPrinters', () => {
-    it('updates the printer list', async () => {
+  describe('refresh', () => {
+    it('updates the printer list, the policy printer and launch at login', async () => {
       const newPrinters: Printer[] = [{ name: 'New Printer', is_default: true }];
-      mockInvoke.mockResolvedValueOnce(newPrinters);
+      mockInvoke
+        .mockResolvedValueOnce(newPrinters)
+        .mockResolvedValueOnce('Front Desk')
+        .mockResolvedValueOnce('all_users');
 
-      await useAppStore.getState().refreshPrinters();
+      await useAppStore.getState().refresh();
 
       expect(useAppStore.getState().printers).toEqual(newPrinters);
+      expect(useAppStore.getState().policyPrinter).toBe('Front Desk');
+      expect(useAppStore.getState().autostart).toBe('all_users');
       expect(mockInvoke).toHaveBeenCalledWith('list_printers');
+      expect(mockInvoke).toHaveBeenCalledWith('get_policy_printer');
+      expect(mockInvoke).toHaveBeenCalledWith('get_autostart');
     });
   });
 
@@ -183,45 +224,33 @@ describe('useAppStore', () => {
   });
 
   describe('restartServer', () => {
-    it('clears error and invokes restart_server', async () => {
-      useAppStore.setState({ serverError: 'old error' });
+    it('invokes restart_server', async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
       await useAppStore.getState().restartServer();
 
-      expect(useAppStore.getState().serverError).toBeNull();
       expect(mockInvoke).toHaveBeenCalledWith('restart_server');
-    });
-
-    it('sets error on failure', async () => {
-      mockInvoke.mockRejectedValueOnce(new Error('port in use'));
-
-      await useAppStore.getState().restartServer();
-
-      const state = useAppStore.getState();
-      expect(state.serverError).toContain('port in use');
-      expect(state.serverRunning).toBe(false);
     });
   });
 
   describe('setAutostart', () => {
     it('enables autostart via invoke and updates state', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
+      mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce('user');
 
       await useAppStore.getState().setAutostart(true);
 
       expect(mockInvoke).toHaveBeenCalledWith('set_autostart', { enabled: true });
-      expect(useAppStore.getState().autostart).toBe(true);
+      expect(useAppStore.getState().autostart).toBe('user');
     });
 
     it('disables autostart via invoke and updates state', async () => {
-      useAppStore.setState({ autostart: true });
-      mockInvoke.mockResolvedValueOnce(undefined);
+      useAppStore.setState({ autostart: 'user' });
+      mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce('off');
 
       await useAppStore.getState().setAutostart(false);
 
       expect(mockInvoke).toHaveBeenCalledWith('set_autostart', { enabled: false });
-      expect(useAppStore.getState().autostart).toBe(false);
+      expect(useAppStore.getState().autostart).toBe('off');
     });
   });
 
@@ -231,8 +260,9 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false); // get_autostart
+        .mockResolvedValueOnce({ state: 'starting' })
+        .mockResolvedValueOnce('off')
+        .mockResolvedValueOnce(null);
 
       // Capture the print-job event handler
       let printJobHandler: ((event: { payload: PrintJob }) => void) | undefined;
@@ -271,8 +301,9 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce([existingJob])
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false); // get_autostart
+        .mockResolvedValueOnce({ state: 'starting' })
+        .mockResolvedValueOnce('off')
+        .mockResolvedValueOnce(null);
 
       let printJobHandler: ((event: { payload: PrintJob }) => void) | undefined;
       mockListen.mockImplementation(async (event: string, handler: unknown) => {
@@ -309,8 +340,9 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ port: 29100, selected_printer: null })
         .mockResolvedValueOnce(existingJobs)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false); // get_autostart
+        .mockResolvedValueOnce({ state: 'starting' })
+        .mockResolvedValueOnce('off')
+        .mockResolvedValueOnce(null);
 
       let printJobHandler: ((event: { payload: PrintJob }) => void) | undefined;
       mockListen.mockImplementation(async (event: string, handler: unknown) => {

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ArrowClockwise, Play, WarningCircle } from 'phosphor-react';
+import { ArrowClockwise, WarningCircle } from 'phosphor-react';
 import { useAppStore } from '@/store';
 
 export default function ServerStatus() {
-  const serverRunning = useAppStore((s) => s.serverRunning);
-  const serverError = useAppStore((s) => s.serverError);
+  const serverStatus = useAppStore((s) => s.serverStatus);
   const config = useAppStore((s) => s.config);
   const updateConfig = useAppStore((s) => s.updateConfig);
   const restartServer = useAppStore((s) => s.restartServer);
@@ -39,30 +38,41 @@ export default function ServerStatus() {
     }
   };
 
+  const labels = {
+    starting: 'Starting…',
+    serving: 'Server running',
+    standby: 'Standing by',
+    failed: 'Not printing',
+  };
+  const green = serverStatus.state === 'serving' || serverStatus.state === 'standby';
+
   return (
     <div className="px-4 py-3 border-b">
       <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${serverRunning ? 'bg-app-green' : 'bg-app-red'}`} />
-        <span className="text-sm">{serverRunning ? 'Server running' : 'Server stopped'}</span>
+        <div className={`w-2 h-2 rounded-full ${green ? 'bg-app-green' : 'bg-app-red'}`} />
+        <span className="text-sm">{labels[serverStatus.state]}</span>
         <button
           onClick={handleRestart}
           disabled={restarting}
           className="ml-auto flex items-center gap-1.5 px-2.5 py-1 text-xs rounded bg-app-dark hover:bg-app-lighter transition-colors disabled:opacity-50"
-          title={serverRunning ? 'Restart server' : 'Start server'}
+          title="Restart server"
         >
-          {serverRunning ? (
-            <ArrowClockwise size={14} className={restarting ? 'animate-spin' : ''} />
-          ) : (
-            <Play size={14} weight="fill" />
-          )}
-          {restarting ? 'Starting…' : serverRunning ? 'Restart' : 'Start'}
+          <ArrowClockwise size={14} className={restarting ? 'animate-spin' : ''} />
+          {restarting ? 'Starting…' : 'Restart'}
         </button>
       </div>
 
-      {serverError && (
+      {serverStatus.state === 'standby' && (
+        <p className="text-xs text-app-muted mt-2">
+          Another signed-in user&apos;s Dazzle is printing for this PC. This one takes over if that
+          one stops. Print jobs show in that user&apos;s window.
+        </p>
+      )}
+
+      {serverStatus.state === 'failed' && (
         <div className="flex items-start gap-2 mt-2 px-2 py-1.5 rounded bg-red-950/40 text-red-400 text-xs">
           <WarningCircle size={14} className="shrink-0 mt-0.5" weight="fill" />
-          <span className="break-all">{serverError}</span>
+          <span className="break-all">{serverStatus.error}</span>
         </div>
       )}
 
@@ -94,11 +104,14 @@ export default function ServerStatus() {
         <label className="ml-auto flex items-center gap-1.5 text-xs text-app-muted cursor-pointer select-none">
           <input
             type="checkbox"
-            checked={autostart}
+            checked={autostart !== 'off'}
+            disabled={autostart === 'all_users'}
             onChange={(e) => setAutostart(e.target.checked)}
             className="accent-app-accent"
           />
-          Launch at login
+          {autostart === 'all_users'
+            ? 'Launch at login (on for all users of this PC)'
+            : 'Launch at login'}
         </label>
       </div>
     </div>

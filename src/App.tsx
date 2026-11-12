@@ -8,6 +8,7 @@ import PrintLog from '@/components/PrintLog';
 
 export default function App() {
   const init = useAppStore((s) => s.init);
+  const refresh = useAppStore((s) => s.refresh);
   const loading = useAppStore((s) => s.loading);
   const initError = useAppStore((s) => s.initError);
   const [isMac, setIsMac] = useState(false);
@@ -15,7 +16,9 @@ export default function App() {
   useEffect(() => {
     setIsMac(platform() === 'macos');
     init();
-  }, [init]);
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [init, refresh]);
 
   if (loading) {
     return (
