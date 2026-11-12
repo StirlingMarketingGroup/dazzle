@@ -1,17 +1,33 @@
-//! Toggle the "Launch at login" registry entry (HKCU Run key) on Windows.
+//! "Launch at login" on Windows: the per-user HKCU Run entry this app toggles,
+//! and the all-users policy Run entry an administrator sets.
 //! On other platforms these are no-ops — autostart is managed by the system.
+
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+// `User` and `AllUsers` are only constructed from the Windows registry.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub enum Autostart {
+    Off,
+    /// This user ticked "Launch at login" (HKCU Run).
+    User,
+    /// An administrator turned it on for every user of this PC. The user cannot change it.
+    AllUsers,
+}
 
 #[cfg(target_os = "windows")]
 mod platform {
     use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
     use windows::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW,
-        RegSetValueExW, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_OPTION_NON_VOLATILE,
-        REG_SZ,
+        RegSetValueExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE,
+        REG_OPTION_NON_VOLATILE, REG_SZ,
     };
     use windows::core::HSTRING;
 
     const RUN_KEY: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+    const POLICY_RUN_KEY: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run";
     const VALUE_NAME: &str = "Dazzle";
 
     fn exe_path() -> Result<String, String> {
@@ -28,12 +44,11 @@ mod platform {
         }
     }
 
-    pub fn is_enabled() -> Result<bool, String> {
+    fn value_exists(root: HKEY, subkey: &str) -> Result<bool, String> {
         unsafe {
             let mut hkey = Default::default();
-            let subkey = HSTRING::from(RUN_KEY);
-            let status =
-                RegOpenKeyExW(HKEY_CURRENT_USER, &subkey, None, KEY_READ, &mut hkey);
+            let subkey = HSTRING::from(subkey);
+            let status = RegOpenKeyExW(root, &subkey, None, KEY_READ, &mut hkey);
             if status == ERROR_FILE_NOT_FOUND {
                 return Ok(false);
             }
@@ -45,6 +60,16 @@ mod platform {
 
             Ok(result.0 == 0)
         }
+    }
+
+    pub fn status() -> Result<super::Autostart, String> {
+        if value_exists(HKEY_LOCAL_MACHINE, POLICY_RUN_KEY)? {
+            return Ok(super::Autostart::AllUsers);
+        }
+        if value_exists(HKEY_CURRENT_USER, RUN_KEY)? {
+            return Ok(super::Autostart::User);
+        }
+        Ok(super::Autostart::Off)
     }
 
     pub fn enable() -> Result<(), String> {
@@ -103,8 +128,8 @@ mod platform {
 
 #[cfg(not(target_os = "windows"))]
 mod platform {
-    pub fn is_enabled() -> Result<bool, String> {
-        Ok(false)
+    pub fn status() -> Result<super::Autostart, String> {
+        Ok(super::Autostart::Off)
     }
 
     pub fn enable() -> Result<(), String> {

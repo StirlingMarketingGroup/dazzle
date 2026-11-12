@@ -16,3 +16,11 @@ export interface AppConfig {
   port: number;
   selected_printer: string | null;
 }
+
+export type ServerStatus =
+  | { state: 'starting' }
+  | { state: 'serving' }
+  | { state: 'standby' }
+  | { state: 'failed'; error: string };
+
+export type Autostart = 'off' | 'user' | 'all_users';

@@ -25,6 +25,8 @@ Download the latest release for your platform from [GitHub Releases](https://git
 
 Dazzle runs in the system tray. Enable "Launch at login" in the app to start it automatically.
 
+On a Windows PC that several people sign in to, follow [Set up Dazzle on a shared Windows PC](docs/windows-shared-pc.md). It has copy-paste PowerShell that installs Dazzle, keeps it updated, starts it for every user, and sets the printer, on one PC or through Group Policy.
+
 ## Supported Printers
 
 - Zebra printers (ZPL native)
@@ -74,7 +76,7 @@ The server listens on `http://localhost:29100` by default (configurable in the a
 
 ### `POST /print`
 
-Send ZPL to the selected printer.
+Send ZPL to a printer.
 
 #### Binary-safe printing with base64 (recommended)
 
@@ -119,10 +121,10 @@ await fetch('http://localhost:29100/print', {
 
 #### Query parameters
 
-| Parameter  | Description                                                                                                      |
-| ---------- | ---------------------------------------------------------------------------------------------------------------- |
-| `encoding` | Set to `base64` to have the server decode the body before printing. **Required for ZPL with binary image data.** |
-| `printer`  | Override the selected printer by name (e.g. `?printer=ZebraRaw`). Falls back to the printer selected in the app. |
+| Parameter  | Description                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `encoding` | Set to `base64` to have the server decode the body before printing. **Required for ZPL with binary image data.**                                                               |
+| `printer`  | Print to this printer by name (e.g. `?printer=ZebraRaw`). Without it, the job goes to the printer an administrator set for the PC, or else to the printer selected in the app. |
 
 #### Responses
 

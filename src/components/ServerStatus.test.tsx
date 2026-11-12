@@ -5,11 +5,23 @@ import ServerStatus from './ServerStatus';
 import { useAppStore } from '@/store';
 
 describe('ServerStatus', () => {
-  it('shows running status when server is running', () => {
+  it('shows starting status', () => {
     useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
+      serverStatus: { state: 'starting' },
       config: { port: 29100, selected_printer: null },
+      autostart: 'off',
+    });
+
+    render(<ServerStatus />);
+    expect(screen.getByText('Starting…')).toBeInTheDocument();
+    expect(screen.getByText('Restart')).toBeInTheDocument();
+  });
+
+  it('shows serving status', () => {
+    useAppStore.setState({
+      serverStatus: { state: 'serving' },
+      config: { port: 29100, selected_printer: null },
+      autostart: 'off',
     });
 
     render(<ServerStatus />);
@@ -17,34 +29,39 @@ describe('ServerStatus', () => {
     expect(screen.getByText('Restart')).toBeInTheDocument();
   });
 
-  it('shows stopped status when server is down', () => {
+  it('shows standby status', () => {
     useAppStore.setState({
-      serverRunning: false,
-      serverError: null,
+      serverStatus: { state: 'standby' },
       config: { port: 29100, selected_printer: null },
+      autostart: 'off',
     });
 
     render(<ServerStatus />);
-    expect(screen.getByText('Server stopped')).toBeInTheDocument();
-    expect(screen.getByText('Start')).toBeInTheDocument();
+    expect(screen.getByText('Standing by')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Another signed-in user's Dazzle is printing for this PC. This one takes over if that one stops. Print jobs show in that user's window."
+      )
+    ).toBeInTheDocument();
   });
 
-  it('displays server error', () => {
+  it('shows a failed status and its error', () => {
     useAppStore.setState({
-      serverRunning: false,
-      serverError: 'Port 9100 already in use',
+      serverStatus: { state: 'failed', error: 'Port 9100 already in use' },
       config: { port: 9100, selected_printer: null },
+      autostart: 'off',
     });
 
     render(<ServerStatus />);
+    expect(screen.getByText('Not printing')).toBeInTheDocument();
     expect(screen.getByText('Port 9100 already in use')).toBeInTheDocument();
   });
 
   it('shows the port input with current value', () => {
     useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
+      serverStatus: { state: 'serving' },
       config: { port: 8080, selected_printer: null },
+      autostart: 'off',
     });
 
     render(<ServerStatus />);
@@ -57,9 +74,9 @@ describe('ServerStatus', () => {
     const restartServer = vi.fn().mockResolvedValue(undefined);
 
     useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
+      serverStatus: { state: 'serving' },
       config: { port: 29100, selected_printer: null },
+      autostart: 'off',
       restartServer,
     });
 
@@ -69,25 +86,24 @@ describe('ServerStatus', () => {
     expect(restartServer).toHaveBeenCalled();
   });
 
-  it('shows auto-start checkbox checked when autostart is enabled', () => {
+  it('shows auto-start checkbox checked when this user enabled it', () => {
     useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
+      serverStatus: { state: 'serving' },
       config: { port: 29100, selected_printer: null },
-      autostart: true,
+      autostart: 'user',
     });
 
     render(<ServerStatus />);
     const checkbox = screen.getByLabelText('Launch at login');
     expect(checkbox).toBeChecked();
+    expect(checkbox).toBeEnabled();
   });
 
-  it('shows auto-start checkbox unchecked when autostart is disabled', () => {
+  it('shows auto-start checkbox unchecked when autostart is off', () => {
     useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
+      serverStatus: { state: 'serving' },
       config: { port: 29100, selected_printer: null },
-      autostart: false,
+      autostart: 'off',
     });
 
     render(<ServerStatus />);
@@ -95,15 +111,27 @@ describe('ServerStatus', () => {
     expect(checkbox).not.toBeChecked();
   });
 
+  it('shows launch at login locked on for all users', () => {
+    useAppStore.setState({
+      serverStatus: { state: 'serving' },
+      config: { port: 29100, selected_printer: null },
+      autostart: 'all_users',
+    });
+
+    render(<ServerStatus />);
+    const checkbox = screen.getByLabelText('Launch at login (on for all users of this PC)');
+    expect(checkbox).toBeChecked();
+    expect(checkbox).toBeDisabled();
+  });
+
   it('calls setAutostart when checkbox is toggled', async () => {
     const user = userEvent.setup();
     const setAutostart = vi.fn().mockResolvedValue(undefined);
 
     useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
+      serverStatus: { state: 'serving' },
       config: { port: 29100, selected_printer: null },
-      autostart: false,
+      autostart: 'off',
       setAutostart,
     });
 
@@ -118,9 +146,9 @@ describe('ServerStatus', () => {
     const user = userEvent.setup();
 
     useAppStore.setState({
-      serverRunning: true,
-      serverError: null,
+      serverStatus: { state: 'serving' },
       config: { port: 29100, selected_printer: null },
+      autostart: 'off',
     });
 
     render(<ServerStatus />);

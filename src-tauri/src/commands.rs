@@ -40,26 +40,37 @@ pub async fn set_config(
     }
 
     if port_changed {
-        crate::restart_server(state.inner()).await?;
+        crate::restart_server(state.inner()).await;
     }
 
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_server_running(state: tauri::State<'_, Arc<AppState>>) -> Result<bool, String> {
-    let handle = state.server_handle.lock().await;
-    Ok(handle.as_ref().is_some_and(|h| !h.is_finished()))
+pub fn get_server_status(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<server::ServerStatus, String> {
+    state
+        .server_status
+        .read()
+        .map(|s| s.clone())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn restart_server(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
-    crate::restart_server(state.inner()).await
+    crate::restart_server(state.inner()).await;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn get_autostart() -> Result<bool, String> {
-    autostart::is_enabled()
+pub fn get_autostart() -> Result<autostart::Autostart, String> {
+    autostart::status()
+}
+
+#[tauri::command]
+pub fn get_policy_printer() -> Option<String> {
+    crate::policy::printer()
 }
 
 #[tauri::command]
