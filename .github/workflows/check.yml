@@ -23,7 +23,16 @@ jobs:
           if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           fi
-          "$HOME/.cargo/bin/rustup" toolchain install stable --profile minimal
+          # Runners on one machine share ~/.rustup. Two jobs that update it at once leave a
+          # toolchain that no later update can install over. So update under a lock, and
+          # reinstall when the update fails.
+          (
+            flock 9
+            "$HOME/.cargo/bin/rustup" toolchain install stable --profile minimal || {
+              "$HOME/.cargo/bin/rustup" toolchain uninstall stable
+              "$HOME/.cargo/bin/rustup" toolchain install stable --profile minimal
+            }
+          ) 9>"$HOME/.rustup/install.lock"
           "$HOME/.cargo/bin/rustup" default stable
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
