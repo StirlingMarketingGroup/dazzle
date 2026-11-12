@@ -84,14 +84,18 @@ Run this on a computer that has the Group Policy Management tools, as a user who
 
 Paste the [update command](#the-update-command) first, in the same window. The GPO carries that command to each PC, and each PC runs it.
 
-Create the GPO. If your domain already has a GPO named `Dazzle`, use another name.
+Set the two values at the top, then create the GPO.
 
 ```powershell
+# Change these two values.
+$gpoName = 'Dazzle'                     # No other GPO in your domain may have this name.
+$ou = 'OU=Shipping,DC=example,DC=com'   # The OU that holds the PCs.
+
 Import-Module GroupPolicy
-$gpo = New-GPO -Name 'Dazzle'
+$gpo = New-GPO -Name $gpoName
 ```
 
-If that shows an error, stop and fix it before you go on. Then fill the GPO and link it. Change the OU.
+If that shows an error, stop and fix it before you go on. Then fill the GPO and link it.
 
 ```powershell
 # 1. Add the "Dazzle update" task to every PC.
@@ -170,9 +174,11 @@ Set-GPRegistryValue -Guid $gpo.Id `
     -Key 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run' `
     -ValueName 'Dazzle' -Type String -Value '"C:\Program Files\Dazzle\dazzle.exe" --hidden' | Out-Null
 
-# 3. Apply the GPO to the PCs in this OU.
-New-GPLink -Guid $gpo.Id -Target 'OU=Shipping,DC=example,DC=com' | Out-Null
+# 3. Apply the GPO to the PCs in the OU.
+New-GPLink -Guid $gpo.Id -Target $ou | Out-Null
 ```
+
+If step 3 shows an error, the OU is wrong. Set `$ou` again and run the step 3 line again. The GPO itself is complete.
 
 What happens next:
 
@@ -204,26 +210,39 @@ Most PCs need nothing here. When a print job names no printer, Dazzle decides in
 Set the printer yourself on a PC with more than one label printer, or with a label printer that step 3 does not recognize. Run this on the PC:
 
 ```powershell
-# Get-Printer lists the names.
+# Change this value.
+$printer = 'ZDesigner ZD420'   # The printer's exact Windows name. Get-Printer lists the names.
+
 [Microsoft.Win32.Registry]::SetValue(
     'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle',
-    'Printer', 'ZDesigner ZD420')
+    'Printer', $printer)
 ```
 
-- **It needs the printer's exact Windows name.** Replace `ZDesigner ZD420` with a name from `Get-Printer`.
 - **Dazzle locks its printer list to this printer** for every user. It reads the value for every print job, so a change needs no restart of Dazzle.
 - **A web app that names a printer in its own request (`?printer=`) still gets that printer.**
 - **To let Dazzle pick again**, run `Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' -Name Printer`.
 
-A GPO can set the same value. It gives every PC the same name, so use one only where every PC has a printer with that name. Use your GPO's name:
+A GPO can set the same value. It gives every PC the same name, so use one only where every PC has a printer with that name.
 
 ```powershell
-Set-GPRegistryValue -Name 'Dazzle' `
+# Change these two values.
+$gpoName = 'Dazzle'            # Your GPO's name.
+$printer = 'ZDesigner ZD420'   # The printer's exact Windows name on every PC.
+
+Set-GPRegistryValue -Name $gpoName `
     -Key 'HKLM\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' `
-    -ValueName 'Printer' -Type String -Value 'ZDesigner ZD420' | Out-Null
+    -ValueName 'Printer' -Type String -Value $printer | Out-Null
 ```
 
-To take the printer out of the GPO again, run `Remove-GPRegistryValue -Name 'Dazzle' -Key 'HKLM\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' -ValueName 'Printer'`. Each PC lets Dazzle pick again after its next policy refresh.
+To take the printer out of the GPO again, run this. Each PC lets Dazzle pick again after its next policy refresh.
+
+```powershell
+# Change this value.
+$gpoName = 'Dazzle'   # Your GPO's name.
+
+Remove-GPRegistryValue -Name $gpoName `
+    -Key 'HKLM\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' -ValueName 'Printer' | Out-Null
+```
 
 Dazzle 0.2.7 and older saved a printer by itself. When a newer Dazzle starts on a PC that has a printer step 3 recognizes, it forgets a saved printer that is not one. You do not need to do anything.
 
