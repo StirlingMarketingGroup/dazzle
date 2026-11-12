@@ -2,7 +2,7 @@
 
 Use this guide for a Windows PC that several people sign in to, such as a shipping desk. It covers one PC set up by hand and many PCs set up through Group Policy (GPO).
 
-Every command here is PowerShell. Run it as an administrator. Paste the commands into the PowerShell window. Do not save them as a `.ps1` file, because Windows may refuse to run a script file that is not signed.
+Every command here is PowerShell. Run it as an administrator. Paste the commands into the PowerShell window, then press Enter, because PowerShell can hold a pasted block until you do. Do not save them as a `.ps1` file, because Windows may refuse to run a script file that is not signed.
 
 ## How Dazzle works on a shared PC
 
@@ -42,8 +42,8 @@ What to know about it:
 
 - **It installs the latest release from GitHub, or updates an older install.** It does nothing when the PC already has the latest version.
 - **A scheduled task named "Dazzle update" runs it as SYSTEM.** A standard user cannot update Dazzle, because the installer needs administrator rights.
-- **The task checks once a day, at 3:00.** A PC that is off or asleep at that time checks soon after it next starts.
-- **The PC needs to reach `github.com` and `release-assets.githubusercontent.com`.** A check that fails changes nothing. The next day's check tries again.
+- **The task checks once a day, at 3:00.** A PC that is off or asleep at that time checks soon after it next starts. A PC set up through the GPO also checks each time Windows refreshes Group Policy, about every 90 to 120 minutes.
+- **The PC needs to reach `github.com` and `release-assets.githubusercontent.com`.** A check that fails changes nothing. The next check tries again.
 - **The installer is not code-signed.** The command trusts whatever this repository publishes as its latest release.
 - **A silent install does not start Dazzle.** Dazzle starts when a user next signs in.
 - **It manages the install made with the `.msi` installer.** A copy that a user installed for themselves with the `_setup.exe` installer stays beside it and does not update. Uninstall that copy in that user's account.
@@ -183,13 +183,15 @@ If step 3 shows an error, the OU is wrong. Set `$ou` again and run the step 3 li
 What happens next:
 
 1. Each PC gets the GPO within about two hours, or at its next restart.
-2. The task installs Dazzle as soon as the PC has the GPO. After that, it checks for a new version once a day.
+2. The task installs Dazzle as soon as the PC has the GPO. After that, it checks for a new version at each Group Policy refresh, about every 90 to 120 minutes, and once a day at 3:00.
 3. Each user gets Dazzle at their next sign-in.
 
 What to know about the GPO:
 
 - **Step 1 writes the task into the GPO's folder directly**, the way the Group Policy editor does. PowerShell has no command for a scheduled task in a GPO. The task shows in the editor under Computer Configuration → Preferences → Control Panel Settings → Scheduled Tasks.
 - **Step 2 sets the same value as step 3 for one PC.** The note there applies.
+- **Group Policy Management does not show the new link by itself.** Select the OU in its tree and press F5.
+- **Windows applies the task again at each Group Policy refresh**, and a task that is applied again runs. That is why these PCs check more often than once a day.
 
 ### If an older GPO already deploys Dazzle
 
