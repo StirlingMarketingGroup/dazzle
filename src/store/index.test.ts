@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from './index';
-import type { Printer, AppConfig, PrintJob } from '@/types';
+import type { Printer, AppConfig, PrintJob, PrinterChoice } from '@/types';
 
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
@@ -16,7 +16,7 @@ function resetStore() {
     loading: true,
     initError: null,
     autostart: 'off',
-    policyPrinter: null,
+    printerChoice: null,
   });
 }
 
@@ -37,7 +37,7 @@ describe('useAppStore', () => {
       expect(state.printJobs).toEqual([]);
       expect(state.serverStatus).toEqual({ state: 'starting' });
       expect(state.autostart).toBe('off');
-      expect(state.policyPrinter).toBeNull();
+      expect(state.printerChoice).toBeNull();
       expect(state.loading).toBe(true);
       expect(state.initError).toBeNull();
     });
@@ -71,7 +71,7 @@ describe('useAppStore', () => {
         .mockResolvedValueOnce(printJobs) // get_print_jobs
         .mockResolvedValueOnce({ state: 'serving' }) // get_server_status
         .mockResolvedValueOnce('user') // get_autostart
-        .mockResolvedValueOnce('Zebra ZD420'); // get_policy_printer
+        .mockResolvedValueOnce({ name: 'Zebra ZD420', source: 'policy' }); // get_printer_choice
       mockListen.mockResolvedValue(() => {});
 
       await useAppStore.getState().init();
@@ -84,52 +84,9 @@ describe('useAppStore', () => {
       expect(state.printJobs).toEqual(printJobs);
       expect(state.serverStatus).toEqual({ state: 'serving' });
       expect(state.autostart).toBe('user');
-      expect(state.policyPrinter).toBe('Zebra ZD420');
+      expect(state.printerChoice).toEqual({ name: 'Zebra ZD420', source: 'policy' });
       expect(mockInvoke).toHaveBeenCalledWith('get_server_status');
-      expect(mockInvoke).toHaveBeenCalledWith('get_policy_printer');
-    });
-
-    it('auto-selects default printer when none configured', async () => {
-      const noSelectionConfig: AppConfig = {
-        port: 29100,
-        selected_printer: null,
-      };
-
-      mockInvoke
-        .mockResolvedValueOnce(printers) // list_printers
-        .mockResolvedValueOnce(noSelectionConfig) // get_config
-        .mockResolvedValueOnce([]) // get_print_jobs
-        .mockResolvedValueOnce({ state: 'starting' }) // get_server_status
-        .mockResolvedValueOnce('off') // get_autostart
-        .mockResolvedValueOnce(null) // get_policy_printer
-        .mockResolvedValue(undefined); // set_config (fire-and-forget)
-      mockListen.mockResolvedValue(() => {});
-
-      await useAppStore.getState().init();
-
-      const state = useAppStore.getState();
-      expect(state.config.selected_printer).toBe('Zebra ZD420');
-    });
-
-    it('auto-selects first printer when no default exists', async () => {
-      const printersNoDefault: Printer[] = [
-        { name: 'Printer A', is_default: false },
-        { name: 'Printer B', is_default: false },
-      ];
-
-      mockInvoke
-        .mockResolvedValueOnce(printersNoDefault)
-        .mockResolvedValueOnce({ port: 29100, selected_printer: null })
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce({ state: 'starting' })
-        .mockResolvedValueOnce('off')
-        .mockResolvedValueOnce(null)
-        .mockResolvedValue(undefined);
-      mockListen.mockResolvedValue(() => {});
-
-      await useAppStore.getState().init();
-
-      expect(useAppStore.getState().config.selected_printer).toBe('Printer A');
+      expect(mockInvoke).toHaveBeenCalledWith('get_printer_choice');
     });
 
     it('sets initError on failure', async () => {
@@ -189,27 +146,28 @@ describe('useAppStore', () => {
   });
 
   describe('refresh', () => {
-    it('updates the printer list, the policy printer and launch at login', async () => {
+    it('updates the printer list, the printer choice and launch at login', async () => {
       const newPrinters: Printer[] = [{ name: 'New Printer', is_default: true }];
+      const printerChoice: PrinterChoice = { name: 'Front Desk', source: 'policy' };
       mockInvoke
         .mockResolvedValueOnce(newPrinters)
-        .mockResolvedValueOnce('Front Desk')
+        .mockResolvedValueOnce(printerChoice)
         .mockResolvedValueOnce('all_users');
 
       await useAppStore.getState().refresh();
 
       expect(useAppStore.getState().printers).toEqual(newPrinters);
-      expect(useAppStore.getState().policyPrinter).toBe('Front Desk');
+      expect(useAppStore.getState().printerChoice).toEqual(printerChoice);
       expect(useAppStore.getState().autostart).toBe('all_users');
       expect(mockInvoke).toHaveBeenCalledWith('list_printers');
-      expect(mockInvoke).toHaveBeenCalledWith('get_policy_printer');
+      expect(mockInvoke).toHaveBeenCalledWith('get_printer_choice');
       expect(mockInvoke).toHaveBeenCalledWith('get_autostart');
     });
   });
 
   describe('updateConfig', () => {
     it('saves config via invoke and updates state', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
+      mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce(null);
 
       const newConfig: AppConfig = {
         port: 8080,
@@ -220,6 +178,22 @@ describe('useAppStore', () => {
 
       expect(mockInvoke).toHaveBeenCalledWith('set_config', { newConfig });
       expect(useAppStore.getState().config).toEqual(newConfig);
+    });
+
+    it('stores the choice it reads back', async () => {
+      const newConfig: AppConfig = {
+        port: 8080,
+        selected_printer: null,
+      };
+      const printerChoice: PrinterChoice = { name: 'Zebra ZD420', source: 'automatic' };
+      mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce(printerChoice);
+
+      await useAppStore.getState().updateConfig(newConfig);
+
+      expect(mockInvoke).toHaveBeenNthCalledWith(1, 'set_config', { newConfig });
+      expect(mockInvoke).toHaveBeenNthCalledWith(2, 'get_printer_choice');
+      expect(useAppStore.getState().config).toEqual(newConfig);
+      expect(useAppStore.getState().printerChoice).toEqual(printerChoice);
     });
   });
 

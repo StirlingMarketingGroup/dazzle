@@ -100,17 +100,27 @@ async fn print_handler(
         body.to_vec()
     };
 
-    let printer = query
-        .printer
-        .or_else(crate::policy::printer)
-        .or_else(|| {
-            state
+    let printer = match query.printer {
+        Some(name) => name,
+        None => {
+            let selected = state
                 .config
                 .read()
                 .ok()
-                .and_then(|c| c.selected_printer.clone())
-        })
-        .ok_or((StatusCode::BAD_REQUEST, "No printer selected".to_string()))?;
+                .and_then(|config| config.selected_printer.clone());
+            tokio::task::spawn_blocking(move || printing::choice(selected.as_deref()))
+                .await
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Task panicked: {e}"),
+                    )
+                })?
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
+                .ok_or((StatusCode::BAD_REQUEST, "No printer found".to_string()))?
+                .name
+        }
+    };
 
     let job_id = generate_id();
     let zpl_preview = String::from_utf8_lossy(&data[..data.len().min(200)]).to_string();

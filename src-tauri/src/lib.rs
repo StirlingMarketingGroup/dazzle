@@ -235,7 +235,7 @@ pub fn run() {
             commands::restart_server,
             commands::get_autostart,
             commands::set_autostart,
-            commands::get_policy_printer,
+            commands::get_printer_choice,
         ])
         .setup(|app| {
             let cfg = config::load();
