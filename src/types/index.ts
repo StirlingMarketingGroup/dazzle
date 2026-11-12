@@ -17,6 +17,11 @@ export interface AppConfig {
   selected_printer: string | null;
 }
 
+export interface PrinterChoice {
+  name: string;
+  source: 'policy' | 'user' | 'automatic';
+}
+
 export type ServerStatus =
   | { state: 'starting' }
   | { state: 'serving' }

@@ -69,8 +69,16 @@ pub fn get_autostart() -> Result<autostart::Autostart, String> {
 }
 
 #[tauri::command]
-pub fn get_policy_printer() -> Option<String> {
-    crate::policy::printer()
+pub fn get_printer_choice(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Option<printing::PrinterChoice>, String> {
+    let selected = state
+        .config
+        .read()
+        .map_err(|e| e.to_string())?
+        .selected_printer
+        .clone();
+    printing::choice(selected.as_deref())
 }
 
 #[tauri::command]

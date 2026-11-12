@@ -55,7 +55,7 @@ describe('PrinterSelect', () => {
         { name: 'Brother QL-800', is_default: false },
       ],
       config: { port: 29100, selected_printer: 'Brother QL-800' },
-      policyPrinter: 'Zebra ZD420',
+      printerChoice: { name: 'Zebra ZD420', source: 'policy' },
     });
 
     render(<PrinterSelect />);
@@ -67,23 +67,86 @@ describe('PrinterSelect', () => {
     expect(zebra.className).toContain('bg-app-accent/15');
     expect(brother.className).not.toContain('bg-app-accent/15');
     expect(screen.getByText("Your administrator chose this PC's printer.")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Automatic' })).not.toBeInTheDocument();
   });
 
   it('says when the administrator printer is not installed', () => {
     useAppStore.setState({
       printers: [{ name: 'Zebra ZD420', is_default: true }],
       config: { port: 29100, selected_printer: 'Zebra ZD420' },
-      policyPrinter: 'Warehouse Zebra',
+      printerChoice: { name: 'Warehouse Zebra', source: 'policy' },
     });
 
     render(<PrinterSelect />);
 
     expect(screen.getByRole('button', { name: /Zebra ZD420/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Automatic' })).not.toBeInTheDocument();
     expect(
       screen.getByText(
         'Your administrator chose the printer "Warehouse Zebra", but it is not installed for this user.'
       )
     ).toBeInTheDocument();
+  });
+
+  it('highlights Automatic and shows the picked name', () => {
+    useAppStore.setState({
+      printers: [
+        { name: 'Zebra ZD420', is_default: false },
+        { name: 'HP LaserJet', is_default: true },
+      ],
+      config: { port: 29100, selected_printer: null },
+      printerChoice: { name: 'Zebra ZD420', source: 'automatic' },
+    });
+
+    render(<PrinterSelect />);
+
+    const automatic = screen.getByRole('button', { name: /Automatic/ });
+    expect(automatic.className).toContain('bg-app-accent/15');
+    expect(automatic).toHaveTextContent('Zebra ZD420');
+    expect(automatic).toHaveAttribute('title', 'Zebra ZD420');
+    expect(screen.getByRole('button', { name: /HP LaserJet/ }).className).not.toContain(
+      'bg-app-accent/15'
+    );
+  });
+
+  it('highlights the printer the user chose', () => {
+    useAppStore.setState({
+      printers: [
+        { name: 'Zebra ZD420', is_default: true },
+        { name: 'Brother QL-800', is_default: false },
+      ],
+      config: { port: 29100, selected_printer: 'Brother QL-800' },
+      printerChoice: { name: 'Brother QL-800', source: 'user' },
+    });
+
+    render(<PrinterSelect />);
+
+    expect(screen.getByRole('button', { name: /Brother QL-800/ }).className).toContain(
+      'bg-app-accent/15'
+    );
+    expect(screen.getByRole('button', { name: 'Automatic' }).className).not.toContain(
+      'bg-app-accent/15'
+    );
+  });
+
+  it('calls updateConfig with no printer when Automatic is clicked', async () => {
+    const user = userEvent.setup();
+    const updateConfig = vi.fn();
+
+    useAppStore.setState({
+      printers: [{ name: 'Zebra ZD420', is_default: true }],
+      config: { port: 29100, selected_printer: 'Zebra ZD420' },
+      printerChoice: { name: 'Zebra ZD420', source: 'user' },
+      updateConfig,
+    });
+
+    render(<PrinterSelect />);
+    await user.click(screen.getByRole('button', { name: 'Automatic' }));
+
+    expect(updateConfig).toHaveBeenCalledWith({
+      port: 29100,
+      selected_printer: null,
+    });
   });
 
   it('has a refresh button', () => {

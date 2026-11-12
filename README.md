@@ -25,7 +25,7 @@ Download the latest release for your platform from [GitHub Releases](https://git
 
 Dazzle runs in the system tray. Enable "Launch at login" in the app to start it automatically.
 
-On a Windows PC that several people sign in to, follow [Set up Dazzle on a shared Windows PC](docs/windows-shared-pc.md). It has copy-paste PowerShell that installs Dazzle, keeps it updated, starts it for every user, and sets the printer, on one PC or through Group Policy.
+On a Windows PC that several people sign in to, follow [Set up Dazzle on a shared Windows PC](docs/windows-shared-pc.md). It has copy-paste PowerShell that installs Dazzle, keeps it updated and starts it for every user, on one PC or through Group Policy.
 
 ## Supported Printers
 
@@ -121,15 +121,15 @@ await fetch('http://localhost:29100/print', {
 
 #### Query parameters
 
-| Parameter  | Description                                                                                                                                                                    |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `encoding` | Set to `base64` to have the server decode the body before printing. **Required for ZPL with binary image data.**                                                               |
-| `printer`  | Print to this printer by name (e.g. `?printer=ZebraRaw`). Without it, the job goes to the printer an administrator set for the PC, or else to the printer selected in the app. |
+| Parameter  | Description                                                                                                                                                                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `encoding` | Set to `base64` to have the server decode the body before printing. **Required for ZPL with binary image data.**                                                                                                                                                 |
+| `printer`  | Print to this printer by name (e.g. `?printer=ZebraRaw`). Without it, the job goes to the printer an administrator set for the PC, then the printer chosen in the app, then the label printer Dazzle finds by itself, or the default printer when it finds none. |
 
 #### Responses
 
 - `200` — `{ "job_id": "..." }` — printed successfully
-- `400` — empty body, invalid base64, or no printer selected
+- `400` — empty body, invalid base64, or no printer found
 - `413` — body too large (max 10 MB)
 - `500` — print command failed
 

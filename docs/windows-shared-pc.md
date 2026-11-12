@@ -8,7 +8,7 @@ Every command here is PowerShell. Run it as an administrator. Paste the commands
 
 - **One Dazzle prints for the whole PC.** Each signed-in user runs their own Dazzle, but they all share one port. The first Dazzle to start serves print jobs. The others show "Standing by".
 - **A standby takes over.** When the user whose Dazzle is serving signs out, a standby Dazzle takes the port within a few seconds.
-- **An administrator chooses the printer.** A print job goes to the printer of the Dazzle that is serving. On a shared PC, set the printer once for every user, so the label prints the same way no matter who signed in first.
+- **Dazzle picks the label printer.** A print job goes to the first printer whose name or driver says it is a Zebra, Bixolon or ZPL printer. Every user who has not chosen a printer in the window gets the same pick, so the label prints the same way no matter whose Dazzle is serving. [Choose the printer](#choose-the-printer) covers the exceptions.
 
 ## The update command
 
@@ -68,23 +68,17 @@ Register-ScheduledTask -TaskName 'Dazzle update' -Force -User 'SYSTEM' -RunLevel
 [Microsoft.Win32.Registry]::SetValue(
     'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run',
     'Dazzle', '"C:\Program Files\Dazzle\dazzle.exe" --hidden')
-
-# 4. Choose the label printer for every user. Get-Printer lists the names.
-[Microsoft.Win32.Registry]::SetValue(
-    'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle',
-    'Printer', 'ZDesigner ZD420')
 ```
 
-- **Step 3** is the registry key behind the Group Policy setting "Run these programs at user logon". Keep `--hidden` in the value. In Dazzle, "Launch at login" then shows as on for all users, and a user cannot turn it off.
-- **Step 4** needs the printer's exact Windows name. Replace `ZDesigner ZD420` with a name from `Get-Printer`. The printer has to be installed for the PC, not mapped by one user, or other users' Dazzle cannot reach it. Dazzle locks its printer list to this printer. A web app that names a printer in its own request (`?printer=`) still gets that printer.
+Step 3 is the registry key behind the Group Policy setting "Run these programs at user logon". Keep `--hidden` in the value. Windows reads it at each sign-in. In Dazzle, "Launch at login" then shows as on for all users, and a user cannot turn it off.
 
-Windows reads the value from step 3 at each sign-in. Dazzle reads the printer from step 4 for every print job. Neither change needs a restart of Dazzle.
+The label printer has to be installed for the PC, not mapped by one user, or other users' Dazzle cannot reach it.
 
 To stop the updates, run `Unregister-ScheduledTask -TaskName 'Dazzle update' -Confirm:$false`.
 
 ## Set up many PCs with Group Policy
 
-One GPO does the whole setup. It adds the update task to every PC, starts Dazzle for every user, and chooses the printer.
+One GPO does the whole setup. It adds the update task to every PC and starts Dazzle for every user. It names no printer, so it fits PCs with different label printers.
 
 Run this on a computer that has the Group Policy Management tools, as a user who may create and link GPOs. Paste the [update command](#the-update-command) first.
 
@@ -95,7 +89,7 @@ Import-Module GroupPolicy
 $gpo = New-GPO -Name 'Dazzle'
 ```
 
-If that shows an error, stop and fix it before you go on. Then fill the GPO and link it. Change the printer name and the OU.
+If that shows an error, stop and fix it before you go on. Then fill the GPO and link it. Change the OU.
 
 ```powershell
 # 1. Add the "Dazzle update" task to every PC.
@@ -174,12 +168,7 @@ Set-GPRegistryValue -Guid $gpo.Id `
     -Key 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run' `
     -ValueName 'Dazzle' -Type String -Value '"C:\Program Files\Dazzle\dazzle.exe" --hidden' | Out-Null
 
-# 3. Choose the label printer for every user.
-Set-GPRegistryValue -Guid $gpo.Id `
-    -Key 'HKLM\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' `
-    -ValueName 'Printer' -Type String -Value 'ZDesigner ZD420' | Out-Null
-
-# 4. Apply the GPO to the PCs in this OU.
+# 3. Apply the GPO to the PCs in this OU.
 New-GPLink -Guid $gpo.Id -Target 'OU=Shipping,DC=example,DC=com' | Out-Null
 ```
 
@@ -192,8 +181,7 @@ What happens next:
 What to know about the GPO:
 
 - **Step 1 writes the task into the GPO's folder directly**, the way the Group Policy editor does. PowerShell has no command for a scheduled task in a GPO. The task shows in the editor under Computer Configuration → Preferences → Control Panel Settings → Scheduled Tasks.
-- **Steps 2 and 3 set the same two values as steps 3 and 4 for one PC.** The notes there apply.
-- **When you replace or rename the printer**, run step 3 again with the new name. In a new PowerShell window, write `-Name 'Dazzle'` in place of `-Guid $gpo.Id`.
+- **Step 2 sets the same value as step 3 for one PC.** The note there applies.
 
 ### If an older GPO already deploys Dazzle
 
@@ -202,29 +190,64 @@ Take these two things out of it, in the Group Policy Management Editor, before y
 - **A Software Installation package** (Computer Configuration → Policies → Software Settings → Software installation). Remove it and choose "Allow users to continue to use the software". That package installs one fixed version, so it must not stay beside a task that installs the latest one.
 - **A per-user `Run` entry** (User Configuration → Preferences → Windows Settings → Registry, under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Delete it. A GPO linked to an OU of computers applies its User Configuration only when loopback processing is on, so this entry often never reaches the users. The computer value above needs no loopback. An entry without `--hidden` also opens the Dazzle window at every sign-in.
 
+## Choose the printer
+
+Most PCs need nothing here. When a print job names no printer, Dazzle decides in this order:
+
+1. The printer an administrator set for the PC, as shown below.
+2. The printer chosen in the window of the Dazzle that is serving, when it is still installed.
+3. The first printer, by name, whose name or driver contains `Zebra`, `ZDesigner`, `Bixolon` or `ZPL`. A printer that Windows shows as offline comes last. In the window this is "Automatic", and the window shows the printer it picked.
+4. When no printer matches, the default printer of the user whose Dazzle is serving, or the first printer when that user has no default.
+
+Set the printer yourself on a PC with more than one label printer, or with a label printer that step 3 does not recognize. Run this on the PC:
+
+```powershell
+# Get-Printer lists the names.
+[Microsoft.Win32.Registry]::SetValue(
+    'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle',
+    'Printer', 'ZDesigner ZD420')
+```
+
+- **It needs the printer's exact Windows name.** Replace `ZDesigner ZD420` with a name from `Get-Printer`.
+- **Dazzle locks its printer list to this printer** for every user. It reads the value for every print job, so a change needs no restart of Dazzle.
+- **A web app that names a printer in its own request (`?printer=`) still gets that printer.**
+- **To let Dazzle pick again**, run `Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' -Name Printer`.
+
+A GPO can set the same value. It gives every PC the same name, so use one only where every PC has a printer with that name. Use your GPO's name:
+
+```powershell
+Set-GPRegistryValue -Name 'Dazzle' `
+    -Key 'HKLM\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' `
+    -ValueName 'Printer' -Type String -Value 'ZDesigner ZD420' | Out-Null
+```
+
+To take the printer out of the GPO again, run `Remove-GPRegistryValue -Name 'Dazzle' -Key 'HKLM\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' -ValueName 'Printer'`. Each PC lets Dazzle pick again after its next policy refresh.
+
+Dazzle 0.2.7 and older saved a printer by itself. When a newer Dazzle starts on a PC that has a printer step 3 recognizes, it forgets a saved printer that is not one. You do not need to do anything.
+
 ## Check that it worked
 
 Restart the PC, sign in as two different users, and print a label as each.
 
-| Question                                           | Command                                                                                                |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Who is signed in?                                  | `query user`                                                                                           |
-| Is a Dazzle serving, and which version?            | `Invoke-RestMethod http://127.0.0.1:29100/status`                                                      |
-| Whose Dazzle is serving? (as administrator)        | `Get-Process -Id (Get-NetTCPConnection -LocalPort 29100 -State Listen).OwningProcess -IncludeUserName` |
-| Is the start-at-sign-in value set?                 | `Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run'`             |
-| Is the printer set?                                | `Get-ItemProperty 'HKLM:\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle'`                             |
-| Did the update task run? (`LastTaskResult` 0 = ok) | `Get-ScheduledTaskInfo 'Dazzle update'`                                                                |
-| Did the GPO reach this PC?                         | `gpresult /r /scope computer`                                                                          |
-| What did this user's Dazzle do?                    | `Get-Content "$env:LOCALAPPDATA\com.stirlingmarketinggroup.dazzle\logs\Dazzle.log" -Tail 20`           |
+| Question                                             | Command                                                                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Who is signed in?                                    | `query user`                                                                                             |
+| Is a Dazzle serving, and which version?              | `Invoke-RestMethod http://127.0.0.1:29100/status`                                                        |
+| Whose Dazzle is serving? (as administrator)          | `Get-Process -Id (Get-NetTCPConnection -LocalPort 29100 -State Listen).OwningProcess -IncludeUserName`   |
+| Is the start-at-sign-in value set?                   | `Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run'`               |
+| Did an administrator set a printer? (no output = no) | `Get-ItemProperty 'HKLM:\SOFTWARE\Policies\StirlingMarketingGroup\Dazzle' -ErrorAction SilentlyContinue` |
+| Did the update task run? (`LastTaskResult` 0 = ok)   | `Get-ScheduledTaskInfo 'Dazzle update'`                                                                  |
+| Did the GPO reach this PC?                           | `gpresult /r /scope computer`                                                                            |
+| What did this user's Dazzle do?                      | `Get-Content "$env:LOCALAPPDATA\com.stirlingmarketinggroup.dazzle\logs\Dazzle.log" -Tail 20`             |
 
 ## What users see
 
-| In the Dazzle window or tray                                                              | Meaning                                                                                                                                 |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Green badge, "Server running"                                                             | This user's Dazzle prints for the PC.                                                                                                   |
-| Green badge, "Standing by"                                                                | Another signed-in user's Dazzle prints for the PC. Print jobs show in that user's window.                                               |
-| Red badge, "Not printing", and a "Dazzle can't print" notification                        | No Dazzle can print. The message says why. "Port 29100 is in use by another program" means a program that is not Dazzle holds the port. |
-| Red text, "Your administrator chose the printer …, but it is not installed for this user" | Windows has no printer with the name from the setup. Labels fail until you set the name again: step 4 for one PC, step 3 in the GPO.    |
+| In the Dazzle window or tray                                                              | Meaning                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Green badge, "Server running"                                                             | This user's Dazzle prints for the PC.                                                                                                                                   |
+| Green badge, "Standing by"                                                                | Another signed-in user's Dazzle prints for the PC. Print jobs show in that user's window.                                                                               |
+| Red badge, "Not printing", and a "Dazzle can't print" notification                        | No Dazzle can print. The message says why. "Port 29100 is in use by another program" means a program that is not Dazzle holds the port.                                 |
+| Red text, "Your administrator chose the printer …, but it is not installed for this user" | Windows has no printer with the name an administrator set. Labels fail until you set the name again or remove the value. See [Choose the printer](#choose-the-printer). |
 
 ## After an update
 
