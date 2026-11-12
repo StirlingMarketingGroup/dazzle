@@ -12,7 +12,7 @@ Every command here is PowerShell. Run it as an administrator. Paste the commands
 
 ## The update command
 
-Both setups below use this command. Paste it first, in the same PowerShell window. It only defines the command. It changes nothing yet.
+Both setups below use this command. Paste it first, in the PowerShell window where you run the setup. Pasting it installs nothing. It only stores the command in `$update` and `$encoded`, and the setup uses those.
 
 ```powershell
 $update = {
@@ -51,7 +51,7 @@ What to know about it:
 
 ## Set up one PC
 
-Run this on the PC, after the update command above.
+Run this on the PC. Paste the update command above first, in the same window.
 
 ```powershell
 # 1. Install the latest Dazzle now.
@@ -80,7 +80,9 @@ To stop the updates, run `Unregister-ScheduledTask -TaskName 'Dazzle update' -Co
 
 One GPO does the whole setup. It adds the update task to every PC and starts Dazzle for every user. It names no printer, so it fits PCs with different label printers.
 
-Run this on a computer that has the Group Policy Management tools, as a user who may create and link GPOs. Paste the [update command](#the-update-command) first.
+Run this on a computer that has the Group Policy Management tools, as a user who may create and link GPOs. A domain controller works. That computer does not need Dazzle, and nothing here installs Dazzle on it.
+
+Paste the [update command](#the-update-command) first, in the same window. The GPO carries that command to each PC, and each PC runs it.
 
 Create the GPO. If your domain already has a GPO named `Dazzle`, use another name.
 
